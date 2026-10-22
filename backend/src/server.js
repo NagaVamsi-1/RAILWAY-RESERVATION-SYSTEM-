@@ -1,6 +1,8 @@
+require("dotenv").config();
 
 const express = require("express");
 const cors = require("cors");
+const mongoose = require("mongoose");
 
 const app = express();
 
@@ -102,9 +104,21 @@ app.get("/api/trains/search", (req, res) => {
 if (require.main === module) {
   const PORT = process.env.PORT || 5000;
 
-  app.listen(PORT, () => {
-    console.log(`Railway Reservation System API running on port ${PORT}`);
-  });
+  mongoose
+    .connect(process.env.MONGODB_URI)
+    .then(() => {
+      console.log("MongoDB Atlas connected successfully.");
+
+      app.listen(PORT, () => {
+        console.log(
+          `Railway Reservation System API running on port ${PORT}`
+        );
+      });
+    })
+    .catch((error) => {
+      console.error("MongoDB connection failed:", error.message);
+      process.exit(1);
+    });
 }
 
 module.exports = app;
