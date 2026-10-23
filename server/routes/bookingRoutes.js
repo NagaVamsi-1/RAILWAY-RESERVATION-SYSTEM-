@@ -5,7 +5,8 @@ const { confirmPayment } = require("../controllers/paymentController");
 
 const {
   getBookingConfirmation,
-  getBookingByPNR
+  getBookingByPNR,
+  cancelBooking
 } = require("../controllers/bookingController");
 
 // Authentication middleware will be attached before these handlers.
@@ -13,5 +14,6 @@ const {
 router.get("/pnr/:pnr", requireAuth, getBookingByPNR);
 router.get("/:bookingId/confirmation", requireAuth, getBookingConfirmation);
 router.post("/:bookingId/payment/confirm", requireAuth, confirmPayment);
+router.post("/:bookingId/cancel", requireAuth, cancelBooking);
 
 module.exports = router;

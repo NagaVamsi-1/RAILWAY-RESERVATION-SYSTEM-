@@ -55,6 +55,28 @@ const bookingSchema = new mongoose.Schema(
       type: String,
       enum: ["PENDING", "PAID", "FAILED", "REFUNDED"],
       default: "PENDING"
+    },
+    refundAmount: {
+      type: Number,
+      min: 0,
+      default: null
+    },
+    refundStatus: {
+      type: String,
+      enum: [
+        "NOT_REQUESTED",
+        "PENDING_POLICY",
+        "PENDING",
+        "PROCESSING",
+        "COMPLETED",
+        "FAILED",
+        "NOT_ELIGIBLE"
+      ],
+      default: "NOT_REQUESTED"
+    },
+    cancelledAt: {
+      type: Date,
+      default: null
     }
   },
   { timestamps: true }
