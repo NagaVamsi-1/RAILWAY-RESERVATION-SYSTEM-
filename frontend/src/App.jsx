@@ -2,41 +2,53 @@
 import { useState } from "react";
 import "./App.css";
 
-const API_URL = "http://localhost:5000/api/trains/search";
+const API = "http://localhost:5000/api";
 
-function App() {
+function getToday() {
+  const date = new Date();
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+export default function App() {
   const [source, setSource] = useState("Bengaluru");
   const [destination, setDestination] = useState("Chennai");
-  const [date, setDate] = useState("");
+  const [date, setDate] = useState("2026-11-01");
   const [trains, setTrains] = useState([]);
   const [selectedTrain, setSelectedTrain] = useState(null);
+  const [travelClass, setTravelClass] = useState("SL");
+  const [availability, setAvailability] = useState(null);
+  const [passengers, setPassengers] = useState([
+    { name: "", age: "", gender: "Male" },
+  ]);
+  const [booking, setBooking] = useState(null);
+  const [lookupId, setLookupId] = useState("");
+  const [lookupBooking, setLookupBooking] = useState(null);
   const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  function swapStations() {
-    setSource(destination);
-    setDestination(source);
-    setTrains([]);
-    setSelectedTrain(null);
-    setMessage("");
+  async function request(url, options = {}) {
+    const response = await fetch(url, options);
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(data.message || data.error || "Request failed.");
+    }
+
+    return data;
   }
 
   async function searchTrains(event) {
     event.preventDefault();
+    setError("");
     setMessage("");
-    setTrains([]);
+    setBooking(null);
     setSelectedTrain(null);
-
-    if (!source.trim() || !destination.trim() || !date) {
-      setMessage("Please enter source, destination and journey date.");
-      return;
-    }
-
-    if (source.trim().toLowerCase() === destination.trim().toLowerCase()) {
-      setMessage("Source and destination must be different.");
-      return;
-    }
-
+    setAvailability(null);
+    setLookupBooking(null);
     setLoading(true);
 
     try {
@@ -46,133 +58,187 @@ function App() {
         date,
       });
 
-      const response = await fetch(`${API_URL}?${params}`);
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || "Unable to search trains.");
-      }
+      const data = await request(
+        `${API}/trains/search?${params.toString()}`
+      );
 
       setTrains(data.trains || []);
-
-      if (!data.trains || data.trains.length === 0) {
-        setMessage("No trains found for your selected journey.");
+      if (!data.trains?.length) {
+        setMessage("No trains found for this route and date.");
       }
-    } catch (error) {
-      setMessage(
-        error.message === "Failed to fetch"
-          ? "Unable to connect to the server. Make sure the backend is running."
-          : error.message || "Something went wrong while searching."
+    } catch (err) {
+      setTrains([]);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function selectTrain(train) {
+    setSelectedTrain(train);
+    setTravelClass(train.classes?.[0] || "SL");
+    setAvailability(null);
+    setBooking(null);
+    setError("");
+    setMessage("");
+    setPassengers([{ name: "", age: "", gender: "Male" }]);
+  }
+
+  async function checkAvailability(className = travelClass) {
+    if (!selectedTrain) return;
+
+    setTravelClass(className);
+    setAvailability(null);
+    setError("");
+    setMessage("");
+    setLoading(true);
+
+    try {
+      const params = new URLSearchParams({
+        trainId: String(selectedTrain.number || selectedTrain.id),
+        date,
+        travelClass: className,
+      });
+
+      const data = await request(
+        `${API}/seats/availability?${params.toString()}`
       );
+
+      setAvailability(data);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function updatePassenger(index, field, value) {
+    setPassengers((current) =>
+      current.map((passenger, i) =>
+        i === index ? { ...passenger, [field]: value } : passenger
+      )
+    );
+  }
+
+  function addPassenger() {
+    if (passengers.length >= 6) return;
+
+    setPassengers((current) => [
+      ...current,
+      { name: "", age: "", gender: "Male" },
+    ]);
+  }
+
+  function removePassenger(index) {
+    setPassengers((current) =>
+      current.filter((_, i) => i !== index)
+    );
+  }
+
+  async function bookTickets(event) {
+    event.preventDefault();
+    setError("");
+    setMessage("");
+    setBooking(null);
+    setLoading(true);
+
+    try {
+      if (!selectedTrain) {
+        throw new Error("Select a train first.");
+      }
+
+      const cleanedPassengers = passengers.map((passenger) => ({
+        name: passenger.name.trim(),
+        age: Number(passenger.age),
+        gender: passenger.gender,
+      }));
+
+      if (
+        cleanedPassengers.some(
+          (passenger) =>
+            !passenger.name ||
+            !Number.isInteger(passenger.age) ||
+            passenger.age < 1 ||
+            passenger.age > 120
+        )
+      ) {
+        throw new Error("Enter a valid name and age for every passenger.");
+      }
+
+      const data = await request(`${API}/bookings`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          trainId: String(selectedTrain.number || selectedTrain.id),
+          journeyDate: date,
+          travelClass,
+          passengers: cleanedPassengers,
+        }),
+      });
+
+      setBooking(data.booking);
+      setAvailability(null);
+      setMessage(data.message || "Booking confirmed successfully.");
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function findBooking(event) {
+    event.preventDefault();
+    setError("");
+    setMessage("");
+    setLookupBooking(null);
+    setLoading(true);
+
+    try {
+      const data = await request(
+        `${API}/bookings/${encodeURIComponent(lookupId.trim())}`
+      );
+      setLookupBooking(data.booking);
+    } catch (err) {
+      setError(err.message);
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <main className="app">
-      <header className="header">
+    <main className="app-shell">
+      <header className="site-header">
         <div className="brand">
-          <div className="brand-logo" aria-label="Railway logo">
-            <svg
-              viewBox="0 0 48 48"
-              width="48"
-              height="48"
-              fill="none"
-              aria-hidden="true"
-            >
-              <rect width="48" height="48" rx="10" fill="#174A80" />
-              <rect
-                x="11"
-                y="7"
-                width="26"
-                height="25"
-                rx="7"
-                fill="#FFFFFF"
-              />
-              <rect
-                x="15"
-                y="11"
-                width="18"
-                height="10"
-                rx="2"
-                fill="#8EC5F4"
-              />
-              <path d="M15 26H33" stroke="#174A80" strokeWidth="3" />
-              <path
-                d="M17 32L12 40M31 32L36 40"
-                stroke="#FFFFFF"
-                strokeWidth="3"
-                strokeLinecap="round"
-              />
-              <path
-                d="M13 40H35"
-                stroke="#FFFFFF"
-                strokeWidth="3"
-                strokeLinecap="round"
-              />
-            </svg>
-          </div>
-
+          <div className="brand-mark">R</div>
           <div>
             <h1>Railway Reservation</h1>
-            <p>Find your next journey</p>
+            <p>Search. Reserve. Travel.</p>
           </div>
         </div>
-
-        <span className="status">TRAIN SEARCH</span>
+        <span className="header-label">ONLINE BOOKING</span>
       </header>
 
       <section className="hero">
         <p className="eyebrow">YOUR JOURNEY STARTS HERE</p>
-        <h2>Where would you like to go?</h2>
-        <p className="subtitle">
-          Search trains, compare timings and explore available travel classes.
-        </p>
+        <h2>Find your next train.</h2>
+        <p>Search routes, check available seats and book your journey.</p>
 
         <form className="search-form" onSubmit={searchTrains}>
           <label>
             From
             <input
-              type="text"
               value={source}
-              onChange={(event) => setSource(event.target.value)}
+              onChange={(e) => setSource(e.target.value)}
               placeholder="Source station"
               required
             />
           </label>
 
-          <button
-            type="button"
-            className="swap-button"
-            title="Swap source and destination"
-            aria-label="Swap source and destination"
-            onClick={swapStations}
-          >
-            <svg
-              viewBox="0 0 24 24"
-              width="22"
-              height="22"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M7 7h13l-3-3" />
-              <path d="m20 7-3 3" />
-              <path d="M17 17H4l3 3" />
-              <path d="m4 17 3-3" />
-            </svg>
-          </button>
-
           <label>
             To
             <input
-              type="text"
               value={destination}
-              onChange={(event) => setDestination(event.target.value)}
+              onChange={(e) => setDestination(e.target.value)}
               placeholder="Destination station"
               required
             />
@@ -183,124 +249,334 @@ function App() {
             <input
               type="date"
               value={date}
-              min={new Date().toLocaleDateString("en-CA")}
-              onChange={(event) => setDate(event.target.value)}
+              min={getToday()}
+              onChange={(e) => setDate(e.target.value)}
               required
             />
           </label>
 
-          <button
-            className="search-button"
-            type="submit"
-            disabled={loading}
-          >
-            {loading ? "Searching..." : "Search trains"}
+          <button type="submit" disabled={loading}>
+            {loading ? "Please wait..." : "Search trains"}
           </button>
         </form>
       </section>
 
-      <section className="results">
+      {error && <div className="alert error">{error}</div>}
+      {message && <div className="alert success">{message}</div>}
+
+      <section className="content-section">
         <div className="section-heading">
           <div>
-            <p className="eyebrow">YOUR OPTIONS</p>
-            <h2>Available trains</h2>
+            <p className="eyebrow">AVAILABLE SERVICES</p>
+            <h2>Train results</h2>
           </div>
-
-          <span className="count">
+          <span className="result-count">
             {trains.length} {trains.length === 1 ? "train" : "trains"}
           </span>
         </div>
 
-        {message && (
-          <p className="message" role="status">
-            {message}
-          </p>
-        )}
-
-        {!message && trains.length === 0 && (
+        {trains.length === 0 ? (
           <div className="empty-state">
-            <div className="empty-icon" aria-hidden="true">
-              ↗
-            </div>
-            <h3>Ready when you are</h3>
-            <p>Enter your journey details above to see matching trains.</p>
+            <h3>No results to display</h3>
+            <p>Enter your route above and search for available trains.</p>
+          </div>
+        ) : (
+          <div className="train-list">
+            {trains.map((train) => (
+              <article
+                className={`train-card ${
+                  selectedTrain?.number === train.number ? "selected" : ""
+                }`}
+                key={train.number || train.id}
+              >
+                <div className="train-main">
+                  <div>
+                    <span className="train-number">
+                      TRAIN {train.number}
+                    </span>
+                    <h3>{train.name}</h3>
+                  </div>
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    onClick={() => selectTrain(train)}
+                  >
+                    {selectedTrain?.number === train.number
+                      ? "Selected"
+                      : "View details"}
+                  </button>
+                </div>
+
+                <div className="route-line">
+                  <div>
+                    <strong>{train.departure || "--:--"}</strong>
+                    <span>{train.source}</span>
+                  </div>
+                  <div className="route-duration">
+                    <span>{train.duration || "Journey"}</span>
+                    <div className="route-track" />
+                  </div>
+                  <div className="route-destination">
+                    <strong>{train.arrival || "--:--"}</strong>
+                    <span>{train.destination}</span>
+                  </div>
+                </div>
+
+                <div className="class-list">
+                  {(train.classes || []).map((item) => (
+                    <span className="class-chip" key={item}>
+                      {item}
+                    </span>
+                  ))}
+                </div>
+              </article>
+            ))}
           </div>
         )}
-
-        <div className="train-list">
-          {trains.map((train) => (
-            <article className="train-card" key={train.id}>
-              <div className="train-top">
-                <div>
-                  <h3>{train.name}</h3>
-                  <p className="train-number">Train no. {train.number}</p>
-                </div>
-
-                <span className="route-tag">
-                  {train.source} → {train.destination}
-                </span>
-              </div>
-
-              <div className="journey-times">
-                <div>
-                  <strong>{train.departure}</strong>
-                  <span>{train.source}</span>
-                </div>
-
-                <div className="duration">
-                  <span>{train.duration}</span>
-                  <div className="route-line" />
-                </div>
-
-                <div className="arrival">
-                  <strong>{train.arrival}</strong>
-                  <span>{train.destination}</span>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                className="details-button"
-                onClick={() =>
-                  setSelectedTrain(
-                    selectedTrain?.id === train.id ? null : train
-                  )
-                }
-              >
-                {selectedTrain?.id === train.id
-                  ? "Hide details"
-                  : "View train details"}
-              </button>
-
-              {selectedTrain?.id === train.id && (
-                <div className="details-panel">
-                  <h4>Travel classes</h4>
-
-                  <div className="class-list">
-                    {(train.classes || []).map((travelClass) => (
-                      <span className="class-chip" key={travelClass}>
-                        {travelClass}
-                      </span>
-                    ))}
-                  </div>
-
-                  <p>Journey date: {date}</p>
-                  <p className="sample-note">
-                    Sample data for project testing. Live train schedules and
-                    seat availability are not connected yet.
-                  </p>
-                </div>
-              )}
-            </article>
-          ))}
-        </div>
       </section>
 
-      <footer>
-        Railway Reservation System · Software Engineering Mini-Project
+      {selectedTrain && (
+        <section className="content-section booking-section">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">RESERVATION</p>
+              <h2>Book your tickets</h2>
+            </div>
+            <span className="result-count">{selectedTrain.number}</span>
+          </div>
+
+          <div className="selected-train">
+            <h3>{selectedTrain.name}</h3>
+            <p>
+              {selectedTrain.source} to {selectedTrain.destination} · {date}
+            </p>
+          </div>
+
+          <label className="field-label">
+            Travel class
+            <select
+              value={travelClass}
+              onChange={(e) => {
+                setTravelClass(e.target.value);
+                setAvailability(null);
+              }}
+            >
+              {(selectedTrain.classes || []).map((item) => (
+                <option key={item} value={item}>
+                  {item}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <button
+            type="button"
+            className="secondary-button availability-button"
+            disabled={loading}
+            onClick={() => checkAvailability()}
+          >
+            Check seat availability
+          </button>
+
+          {availability && (
+            <div className="availability-card">
+              <div>
+                <span>Available seats</span>
+                <strong>{availability.availableSeats}</strong>
+              </div>
+              <div>
+                <span>Total seats</span>
+                <strong>{availability.totalSeats}</strong>
+              </div>
+              <div>
+                <span>Class</span>
+                <strong>{availability.travelClass}</strong>
+              </div>
+            </div>
+          )}
+
+          <form className="passenger-form" onSubmit={bookTickets}>
+            <h3>Passenger details</h3>
+            <p className="form-hint">
+              Add up to six passengers. All passenger details are required.
+            </p>
+
+            {passengers.map((passenger, index) => (
+              <div className="passenger-card" key={index}>
+                <div className="passenger-title">
+                  <strong>Passenger {index + 1}</strong>
+                  {passengers.length > 1 && (
+                    <button
+                      type="button"
+                      className="remove-button"
+                      onClick={() => removePassenger(index)}
+                    >
+                      Remove
+                    </button>
+                  )}
+                </div>
+
+                <div className="passenger-fields">
+                  <label>
+                    Full name
+                    <input
+                      value={passenger.name}
+                      onChange={(e) =>
+                        updatePassenger(index, "name", e.target.value)
+                      }
+                      placeholder="Passenger name"
+                      required
+                    />
+                  </label>
+
+                  <label>
+                    Age
+                    <input
+                      type="number"
+                      min="1"
+                      max="120"
+                      value={passenger.age}
+                      onChange={(e) =>
+                        updatePassenger(index, "age", e.target.value)
+                      }
+                      placeholder="Age"
+                      required
+                    />
+                  </label>
+
+                  <label>
+                    Gender
+                    <select
+                      value={passenger.gender}
+                      onChange={(e) =>
+                        updatePassenger(index, "gender", e.target.value)
+                      }
+                    >
+                      <option value="Male">Male</option>
+                      <option value="Female">Female</option>
+                      <option value="Other">Other</option>
+                    </select>
+                  </label>
+                </div>
+              </div>
+            ))}
+
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={passengers.length >= 6}
+              onClick={addPassenger}
+            >
+              Add passenger
+            </button>
+
+            <button
+              className="primary-button"
+              type="submit"
+              disabled={loading}
+            >
+              {loading ? "Processing..." : "Confirm booking"}
+            </button>
+          </form>
+
+          {booking && (
+            <div className="confirmation-card">
+              <p className="eyebrow">BOOKING CONFIRMED</p>
+              <h3>Your reservation is successful.</h3>
+              <div className="confirmation-details">
+                <span>Booking ID</span>
+                <strong>{booking._id}</strong>
+                <span>Train</span>
+                <strong>
+                  {booking.trainNumber} · {booking.trainName}
+                </strong>
+                <span>Journey date</span>
+                <strong>{booking.journeyDate?.slice(0, 10) || date}</strong>
+                <span>Class</span>
+                <strong>{booking.travelClass}</strong>
+                <span>Passengers</span>
+                <strong>{booking.seatCount}</strong>
+                <span>Status</span>
+                <strong>{booking.status}</strong>
+              </div>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => {
+                  setLookupId(booking._id);
+                  setLookupBooking(booking);
+                }}
+              >
+                View booking details
+              </button>
+            </div>
+          )}
+        </section>
+      )}
+
+      <section className="content-section lookup-section">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">YOUR RESERVATION</p>
+            <h2>Find a booking</h2>
+          </div>
+        </div>
+
+        <form className="lookup-form" onSubmit={findBooking}>
+          <label>
+            Booking ID
+            <input
+              value={lookupId}
+              onChange={(e) => setLookupId(e.target.value)}
+              placeholder="Enter your booking ID"
+              required
+            />
+          </label>
+          <button type="submit" disabled={loading}>
+            Find booking
+          </button>
+        </form>
+
+        {lookupBooking && (
+          <div className="confirmation-card lookup-result">
+            <h3>Booking details</h3>
+            <div className="confirmation-details">
+              <span>Booking ID</span>
+              <strong>{lookupBooking._id}</strong>
+              <span>Train</span>
+              <strong>
+                {lookupBooking.trainNumber} · {lookupBooking.trainName}
+              </strong>
+              <span>Route</span>
+              <strong>
+                {lookupBooking.source} to {lookupBooking.destination}
+              </strong>
+              <span>Journey date</span>
+              <strong>
+                {lookupBooking.journeyDate?.slice(0, 10) || "--"}
+              </strong>
+              <span>Class</span>
+              <strong>{lookupBooking.travelClass}</strong>
+              <span>Passengers</span>
+              <strong>{lookupBooking.seatCount}</strong>
+              <span>Status</span>
+              <strong>{lookupBooking.status}</strong>
+            </div>
+
+            <h4>Passenger list</h4>
+            {(lookupBooking.passengers || []).map((passenger, index) => (
+              <p key={index}>
+                {index + 1}. {passenger.name}, age {passenger.age},{" "}
+                {passenger.gender}
+              </p>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <footer className="site-footer">
+        Railway Reservation System · Academic project
       </footer>
     </main>
   );
 }
-
-export default App;
