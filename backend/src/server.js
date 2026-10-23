@@ -1,8 +1,13 @@
-require("dotenv").config();
 
 const express = require("express");
 const cors = require("cors");
 const mongoose = require("mongoose");
+const dotenv = require("dotenv");
+
+const SeatAvailability = require("./models/SeatAvailability");
+const Booking = require("./models/Booking");
+
+dotenv.config();
 
 const app = express();
 
@@ -34,10 +39,32 @@ const trains = [
   }
 ];
 
+function isValidDate(date) {
+  if (typeof date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return false;
+  }
+
+  const parsedDate = new Date(`${date}T00:00:00Z`);
+
+  return (
+    !Number.isNaN(parsedDate.getTime()) &&
+    parsedDate.toISOString().slice(0, 10) === date
+  );
+}
+
+function isJourneyDateInPast(date) {
+  const journeyDate = new Date(`${date}T00:00:00Z`);
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+
+  return journeyDate < today;
+}
+
 app.get("/", (req, res) => {
   res.send("Railway Reservation System API is running.");
 });
 
+// BL-07: Search trains
 app.get("/api/trains/search", (req, res) => {
   const { source, destination, date } = req.query;
 
@@ -54,35 +81,19 @@ app.get("/api/trains/search", (req, res) => {
     });
   }
 
+  if (!isValidDate(date)) {
+    return res.status(400).json({
+      message: "Please provide a valid journey date."
+    });
+  }
+
   if (source.trim().toLowerCase() === destination.trim().toLowerCase()) {
     return res.status(400).json({
       message: "Source and destination must be different."
     });
   }
 
-  const datePattern = /^\d{4}-\d{2}-\d{2}$/;
-
-  if (!datePattern.test(date)) {
-    return res.status(400).json({
-      message: "Please provide a valid journey date."
-    });
-  }
-
-  const journeyDate = new Date(`${date}T00:00:00Z`);
-
-  if (
-    Number.isNaN(journeyDate.getTime()) ||
-    journeyDate.toISOString().slice(0, 10) !== date
-  ) {
-    return res.status(400).json({
-      message: "Please provide a valid journey date."
-    });
-  }
-
-  const today = new Date();
-  today.setUTCHours(0, 0, 0, 0);
-
-  if (journeyDate < today) {
+  if (isJourneyDateInPast(date)) {
     return res.status(400).json({
       message: "Journey date cannot be in the past."
     });
@@ -99,6 +110,252 @@ app.get("/api/trains/search", (req, res) => {
     count: matchingTrains.length,
     trains: matchingTrains
   });
+});
+
+// BL-09: Check seat availability
+app.get("/api/seats/availability", async (req, res) => {
+  const { trainId, date, travelClass } = req.query;
+
+  if (
+    typeof trainId !== "string" ||
+    !trainId.trim() ||
+    typeof date !== "string" ||
+    !date.trim() ||
+    typeof travelClass !== "string" ||
+    !travelClass.trim()
+  ) {
+    return res.status(400).json({
+      message: "Train ID, journey date and travel class are required."
+    });
+  }
+
+  if (!isValidDate(date)) {
+    return res.status(400).json({
+      message: "Please provide a valid journey date."
+    });
+  }
+
+  try {
+    const availability = await SeatAvailability.findOne({
+      trainId: trainId.trim(),
+      journeyDate: date,
+      travelClass: travelClass.trim().toUpperCase()
+    }).lean();
+
+    if (!availability) {
+      return res.status(404).json({
+        message:
+          "Seat availability has not been configured for this train, date and class."
+      });
+    }
+
+    return res.status(200).json({
+      trainId: availability.trainId,
+      trainNumber: availability.trainNumber,
+      journeyDate: availability.journeyDate,
+      travelClass: availability.travelClass,
+      totalSeats: availability.totalSeats,
+      availableSeats: availability.availableSeats
+    });
+  } catch (error) {
+    console.error("Seat availability lookup failed:", error.message);
+
+    return res.status(500).json({
+      message: "Unable to retrieve seat availability."
+    });
+  }
+});
+
+// BL-10: Create a booking
+app.post("/api/bookings", async (req, res) => {
+  const { trainId, journeyDate, travelClass, passengers } = req.body;
+
+  if (
+    typeof trainId !== "string" ||
+    !trainId.trim() ||
+    typeof journeyDate !== "string" ||
+    !journeyDate.trim() ||
+    typeof travelClass !== "string" ||
+    !travelClass.trim() ||
+    !Array.isArray(passengers) ||
+    passengers.length < 1 ||
+    passengers.length > 6
+  ) {
+    return res.status(400).json({
+      message:
+        "Provide a train ID, journey date, travel class and 1–6 passengers."
+    });
+  }
+
+  if (!isValidDate(journeyDate)) {
+    return res.status(400).json({
+      message: "Please provide a valid journey date."
+    });
+  }
+
+  if (isJourneyDateInPast(journeyDate)) {
+    return res.status(400).json({
+      message: "Journey date cannot be in the past."
+    });
+  }
+
+  for (const passenger of passengers) {
+    if (
+      !passenger ||
+      typeof passenger.name !== "string" ||
+      !passenger.name.trim() ||
+      passenger.name.trim().length > 100 ||
+      !Number.isInteger(passenger.age) ||
+      passenger.age < 1 ||
+      passenger.age > 120 ||
+      !["Male", "Female", "Other"].includes(passenger.gender)
+    ) {
+      return res.status(400).json({
+        message:
+          "Each passenger needs a valid name, age and gender (Male, Female or Other)."
+      });
+    }
+  }
+
+  const train = trains.find((item) => item.id === trainId.trim());
+
+  if (!train) {
+    return res.status(404).json({
+      message: "Train not found."
+    });
+  }
+
+  const normalizedClass = travelClass.trim().toUpperCase();
+
+  if (!train.classes.includes(normalizedClass)) {
+    return res.status(400).json({
+      message: "The selected class is not available on this train."
+    });
+  }
+
+  let seatsReserved = false;
+
+  try {
+    // Atomically decrement seats only if enough are available.
+    const availability = await SeatAvailability.findOneAndUpdate(
+      {
+        trainId: train.id,
+        journeyDate,
+        travelClass: normalizedClass,
+        availableSeats: { $gte: passengers.length }
+      },
+      {
+        $inc: { availableSeats: -passengers.length }
+      },
+      {
+        new: true,
+        runValidators: true
+      }
+    );
+
+    if (!availability) {
+      const existingAvailability = await SeatAvailability.findOne({
+        trainId: train.id,
+        journeyDate,
+        travelClass: normalizedClass
+      }).lean();
+
+      if (!existingAvailability) {
+        return res.status(404).json({
+          message:
+            "Seat availability has not been configured for this train, date and class."
+        });
+      }
+
+      return res.status(409).json({
+        message: "Not enough seats are available for the requested passengers.",
+        availableSeats: existingAvailability.availableSeats
+      });
+    }
+
+    seatsReserved = true;
+
+    const booking = await Booking.create({
+      trainId: train.id,
+      trainNumber: train.number,
+      trainName: train.name,
+      source: train.source,
+      destination: train.destination,
+      journeyDate,
+      travelClass: normalizedClass,
+      passengers: passengers.map((passenger) => ({
+        name: passenger.name.trim(),
+        age: passenger.age,
+        gender: passenger.gender
+      })),
+      seatCount: passengers.length,
+      status: "CONFIRMED"
+    });
+
+    return res.status(201).json({
+      message: "Booking confirmed successfully.",
+      booking
+    });
+  } catch (error) {
+    if (seatsReserved) {
+      try {
+        await SeatAvailability.updateOne(
+          {
+            trainId: train.id,
+            journeyDate,
+            travelClass: normalizedClass
+          },
+          {
+            $inc: { availableSeats: passengers.length }
+          }
+        );
+      } catch (rollbackError) {
+        console.error("Seat rollback failed:", rollbackError.message);
+      }
+    }
+
+    if (error.name === "ValidationError") {
+      return res.status(400).json({
+        message: "Booking validation failed.",
+        error: error.message
+      });
+    }
+
+    console.error("Booking creation failed:", error.message);
+
+    return res.status(500).json({
+      message: "Unable to create booking."
+    });
+  }
+});
+
+// BL-10: Retrieve a booking
+app.get("/api/bookings/:bookingId", async (req, res) => {
+  const { bookingId } = req.params;
+
+  if (!mongoose.isValidObjectId(bookingId)) {
+    return res.status(400).json({
+      message: "Invalid booking ID."
+    });
+  }
+
+  try {
+    const booking = await Booking.findById(bookingId).lean();
+
+    if (!booking) {
+      return res.status(404).json({
+        message: "Booking not found."
+      });
+    }
+
+    return res.status(200).json({ booking });
+  } catch (error) {
+    console.error("Booking lookup failed:", error.message);
+
+    return res.status(500).json({
+      message: "Unable to retrieve booking."
+    });
+  }
 });
 
 if (require.main === module) {
