@@ -1,0 +1,212 @@
+/* Styles for BL-11 (payment), BL-12 (PNR) and BL-13 (cancellation / refund) */
+
+.payment-panel {
+  text-align: left;
+  margin-top: 28px;
+  padding: 22px;
+  border: 1px solid #cbd8ea;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.payment-panel h3 {
+  margin: 0 0 16px;
+  font-size: 20px;
+}
+
+.payment-summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.payment-summary > div {
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: #f4f7fc;
+}
+
+.payment-summary span {
+  display: block;
+  color: #68778c;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.payment-summary strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 18px;
+}
+
+.payment-summary .payment-total {
+  background: #e8f0fb;
+}
+
+.hold-timer {
+  margin: 14px 0 0;
+  color: #46546b;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.hold-timer.urgent {
+  color: #a42e2e;
+}
+
+.method-tabs {
+  display: flex;
+  gap: 8px;
+  margin: 18px 0 14px;
+}
+
+.method-tabs button {
+  min-height: 38px;
+  padding: 0 16px;
+  border: 1px solid #cbd8ea;
+  border-radius: 8px;
+  background: #fff;
+  color: #214f91;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.method-tabs button.active {
+  border-color: #2360b5;
+  background: #2360b5;
+  color: #fff;
+}
+
+.payment-form {
+  display: grid;
+  gap: 14px;
+  max-width: 460px;
+}
+
+.payment-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: #46546b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.payment-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.payment-form .alert {
+  margin-top: 0;
+}
+
+.payment-form code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: #eef2f8;
+  font-size: 12px;
+}
+
+.pnr-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.pnr-number {
+  margin: 4px 0 0;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: 3px;
+  color: #172033;
+}
+
+.status-badge {
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  background: #e6f6ec;
+  color: #176a3a;
+}
+
+.status-badge.cancelled,
+.status-badge.expired {
+  background: #fdeaea;
+  color: #a42e2e;
+}
+
+.status-badge.pending_payment {
+  background: #fff4dc;
+  color: #8a5b00;
+}
+
+.confirmation-card.status-cancelled {
+  border-color: #f0c4c4;
+  background: #fff8f8;
+}
+
+.refund-box {
+  margin-top: 22px;
+  padding: 16px;
+  border: 1px solid #d7dfeb;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.refund-box.warning {
+  border-color: #f0d9a8;
+  background: #fffaf0;
+}
+
+.refund-box h4 {
+  margin: 0 0 12px;
+}
+
+.refund-box p {
+  margin: 0 0 14px;
+  color: #46546b;
+  font-size: 13px;
+}
+
+.danger-button {
+  min-height: 44px;
+  margin-top: 18px;
+  padding: 0 20px;
+  border: 0;
+  border-radius: 8px;
+  background: #b83232;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.danger-button:hover {
+  background: #962626;
+}
+
+.refund-box .danger-button {
+  margin-top: 0;
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+@media (max-width: 760px) {
+  .payment-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .pnr-number {
+    font-size: 24px;
+  }
+}
