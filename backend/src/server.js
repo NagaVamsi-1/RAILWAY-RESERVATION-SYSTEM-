@@ -6,6 +6,10 @@ const dotenv = require("dotenv");
 
 const SeatAvailability = require("./models/SeatAvailability");
 const Booking = require("./models/Booking");
+const bookingsRouter = require("./routes/bookings");
+const { calculateTotalFare, getFarePerPassenger, HOLD_MINUTES } = require("./config/fares");
+const { releaseExpiredHolds } = require("./services/holds");
+const { toPublicBooking } = require("./services/publicBooking");
 
 dotenv.config();
 
@@ -136,6 +140,8 @@ app.get("/api/seats/availability", async (req, res) => {
   }
 
   try {
+    await releaseExpiredHolds();
+
     const availability = await SeatAvailability.findOne({
       trainId: trainId.trim(),
       journeyDate: date,
@@ -166,7 +172,8 @@ app.get("/api/seats/availability", async (req, res) => {
   }
 });
 
-// BL-10: Create a booking
+// BL-10 / BL-11: Create a booking. Seats are held and the booking stays
+// PENDING_PAYMENT until payment succeeds (see routes/bookings.js).
 app.post("/api/bookings", async (req, res) => {
   const { trainId, journeyDate, travelClass, passengers } = req.body;
 
@@ -236,6 +243,9 @@ app.post("/api/bookings", async (req, res) => {
   let seatsReserved = false;
 
   try {
+    // Free seats held by unpaid bookings whose payment window has expired.
+    await releaseExpiredHolds();
+
     // Atomically decrement seats only if enough are available.
     const availability = await SeatAvailability.findOneAndUpdate(
       {
@@ -289,12 +299,16 @@ app.post("/api/bookings", async (req, res) => {
         gender: passenger.gender
       })),
       seatCount: passengers.length,
-      status: "CONFIRMED"
+      departure: train.departure,
+      farePerPassenger: getFarePerPassenger(normalizedClass),
+      totalAmount: calculateTotalFare(normalizedClass, passengers.length),
+      status: "PENDING_PAYMENT",
+      holdExpiresAt: new Date(Date.now() + HOLD_MINUTES * 60 * 1000)
     });
 
     return res.status(201).json({
-      message: "Booking confirmed successfully.",
-      booking
+      message: `Seats held for ${HOLD_MINUTES} minutes. Complete the payment to confirm your booking.`,
+      booking: toPublicBooking(booking)
     });
   } catch (error) {
     if (seatsReserved) {
@@ -348,7 +362,7 @@ app.get("/api/bookings/:bookingId", async (req, res) => {
       });
     }
 
-    return res.status(200).json({ booking });
+    return res.status(200).json({ booking: toPublicBooking(booking) });
   } catch (error) {
     console.error("Booking lookup failed:", error.message);
 
@@ -357,6 +371,9 @@ app.get("/api/bookings/:bookingId", async (req, res) => {
     });
   }
 });
+
+// BL-11 payment, BL-12 PNR lookup, BL-13 cancellation and refund
+app.use("/api/bookings", bookingsRouter);
 
 if (require.main === module) {
   const PORT = process.env.PORT || 5000;
