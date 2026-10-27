@@ -1,4 +1,4 @@
-export const API = "http://localhost:5050/api";
+export const API = "http://localhost:5000/api";
 
 // Small fetch wrapper used by the payment / PNR / cancellation components.
 export async function request(url, options = {}) {
