@@ -8,6 +8,7 @@ import PassengerPage from "./pages/PassengerPage";
 import PaymentPage from "./pages/PaymentPage";
 import ConfirmationPage from "./pages/ConfirmationPage";
 import PnrPage from "./pages/PnrPage";
+import RegisterPage from "./pages/RegisterPage";
 
 export default function App() {
   const { path, params } = useRoute();
@@ -28,7 +29,9 @@ export default function App() {
   const payment = path.match(/^\/payment\/([^/]+)$/);
   const confirmation = path.match(/^\/confirmation\/([^/]+)$/);
 
-  if (payment) {
+if (path === "/register") {
+    page = <RegisterPage />;
+  } else if (payment) {
     page = <PaymentPage key={payment[1]} bookingId={payment[1]} onBookAgain={bookAnother} />;
   } else if (confirmation) {
     page = <ConfirmationPage key={confirmation[1]} bookingId={confirmation[1]} onBookAgain={bookAnother} />;

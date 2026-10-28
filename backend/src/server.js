@@ -11,6 +11,8 @@ const { calculateTotalFare, getFarePerPassenger, HOLD_MINUTES } = require("./con
 const { releaseExpiredHolds } = require("./services/holds");
 const { toPublicBooking } = require("./services/publicBooking");
 
+const usersRouter = require("./routes/users");
+
 dotenv.config();
 
 const app = express();
@@ -374,6 +376,7 @@ app.get("/api/bookings/:bookingId", async (req, res) => {
 
 // BL-11 payment, BL-12 PNR lookup, BL-13 cancellation and refund
 app.use("/api/bookings", bookingsRouter);
+app.use("/api/users", usersRouter);
 
 if (require.main === module) {
   const PORT = process.env.PORT || 5000;

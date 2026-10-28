@@ -3,6 +3,7 @@ const STEPS = ["Train Search", "Passenger Details", "Payment", "Confirmation"];
 
 export function Header({ path }) {
   const onPnr = path.startsWith("/pnr");
+   const onRegister = path === "/register";
   return (
     <header className="site-header">
       <a href="#/" className="brand" aria-label="Railway Reservation home">
@@ -13,7 +14,15 @@ export function Header({ path }) {
         </div>
       </a>
       <nav className="main-nav" aria-label="Main">
-        <a href="#/" className={!onPnr ? "active" : ""} aria-current={!onPnr ? "page" : undefined}>
+	<a
+  href="#/register"
+  className={onRegister ? "active" : ""}
+aria-current={onRegister ? "page" : undefined}
+>
+  Register
+</a>
+        <a href="#/" className={!onPnr && !onRegister ? "active" : ""}
+aria-current={!onPnr && !onRegister ? "page" : undefined}>
           Search Trains
         </a>
         <a href="#/pnr" className={onPnr ? "active" : ""} aria-current={onPnr ? "page" : undefined}>
