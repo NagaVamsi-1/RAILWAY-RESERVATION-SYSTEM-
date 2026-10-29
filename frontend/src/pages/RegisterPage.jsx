@@ -1,6 +1,7 @@
 
 import { useState } from "react";
 import { API, request } from "../api";
+import { navigate } from "../router";
 import "./RegisterPage.css";
 
 export default function RegisterPage() {
@@ -10,17 +11,23 @@ export default function RegisterPage() {
     password: "",
     confirmPassword: "",
   });
+
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
   function handleChange(event) {
     const { name, value } = event.target;
-    setForm((previous) => ({ ...previous, [name]: value }));
+
+    setForm((previous) => ({
+      ...previous,
+      [name]: value,
+    }));
   }
 
   async function handleSubmit(event) {
     event.preventDefault();
+
     setMessage("");
     setError("");
 
@@ -34,7 +41,9 @@ export default function RegisterPage() {
     try {
       const data = await request(`${API}/users/register`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({
           name: form.name,
           email: form.email,
@@ -43,12 +52,9 @@ export default function RegisterPage() {
       });
 
       setMessage(data.message || "Registration successful!");
-      setForm({
-        name: "",
-        email: "",
-        password: "",
-        confirmPassword: "",
-      });
+
+      // Registration succeeded. Continue to Login.
+      navigate("/login");
     } catch (err) {
       setError(err.message || "Registration failed.");
     } finally {
@@ -122,7 +128,11 @@ export default function RegisterPage() {
           />
         </p>
 
-        <button className="registration-button" type="submit" disabled={loading}>
+        <button
+          className="registration-button"
+          type="submit"
+          disabled={loading}
+        >
           {loading ? "Registering..." : "Register"}
         </button>
 

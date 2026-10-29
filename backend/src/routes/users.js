@@ -1,6 +1,7 @@
 
 const express = require("express");
 const bcrypt = require("bcrypt");
+const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 
 const router = express.Router();
@@ -80,6 +81,65 @@ router.post("/register", async (req, res) => {
 
     return res.status(500).json({
       message: "Unable to register user.",
+    });
+  }
+});
+// BL-05: User login
+router.post("/login", async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    if (
+      typeof email !== "string" ||
+      typeof password !== "string" ||
+      !email.trim() ||
+      !password
+    ) {
+      return res.status(400).json({
+        message: "Email and password are required.",
+      });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+
+    // Password is excluded by default in the User model, so select it explicitly.
+    const user = await User.findOne({ email: normalizedEmail })
+      .select("+password");
+
+    // Use the same error for unknown email and incorrect password.
+    if (!user || !(await bcrypt.compare(password, user.password))) {
+      return res.status(401).json({
+        message: "Invalid email or password.",
+      });
+    }
+
+    if (!process.env.JWT_SECRET) {
+      console.error("JWT_SECRET is not configured.");
+      return res.status(500).json({
+        message: "Login is temporarily unavailable.",
+      });
+    }
+
+    const token = jwt.sign(
+      { userId: user._id.toString() },
+      process.env.JWT_SECRET,
+      { expiresIn: "1h" }
+    );
+
+    return res.status(200).json({
+      message: "Login successful.",
+      token,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+      },
+    });
+  } catch (error) {
+    console.error("User login failed:", error.message);
+
+    return res.status(500).json({
+      message: "Unable to log in.",
     });
   }
 });

@@ -12,7 +12,7 @@ const { releaseExpiredHolds } = require("./services/holds");
 const { toPublicBooking } = require("./services/publicBooking");
 
 const usersRouter = require("./routes/users");
-
+const authenticateToken = require("./middleware/auth");
 dotenv.config();
 
 const app = express();
@@ -176,7 +176,7 @@ app.get("/api/seats/availability", async (req, res) => {
 
 // BL-10 / BL-11: Create a booking. Seats are held and the booking stays
 // PENDING_PAYMENT until payment succeeds (see routes/bookings.js).
-app.post("/api/bookings", async (req, res) => {
+app.post("/api/bookings", authenticateToken, async (req, res) => {
   const { trainId, journeyDate, travelClass, passengers } = req.body;
 
   if (
@@ -287,8 +287,9 @@ app.post("/api/bookings", async (req, res) => {
 
     seatsReserved = true;
 
-    const booking = await Booking.create({
-      trainId: train.id,
+   const booking = await Booking.create({
+  userId: req.user.userId,
+  trainId: train.id,
       trainNumber: train.number,
       trainName: train.name,
       source: train.source,

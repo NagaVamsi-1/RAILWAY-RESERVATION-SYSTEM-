@@ -9,8 +9,10 @@ const { generatePnr, isValidPnrFormat } = require("../services/pnr");
 const { calculateRefund } = require("../services/refund");
 const { releaseExpiredHolds } = require("../services/holds");
 const { toPublicBooking } = require("../services/publicBooking");
+const authenticateToken = require("../middleware/auth");
 
 const router = express.Router();
+
 
 const DUPLICATE_KEY = 11000;
 
@@ -18,7 +20,7 @@ const DUPLICATE_KEY = 11000;
 // BL-11: Pay for a booking (UC-04 steps 4-6)
 // POST /api/bookings/:bookingId/payment
 // ---------------------------------------------------------------------------
-router.post("/:bookingId/payment", async (req, res) => {
+router.post("/:bookingId/payment", authenticateToken, async (req, res) => {
   const { bookingId } = req.params;
 
   if (!mongoose.isValidObjectId(bookingId)) {
@@ -28,11 +30,22 @@ router.post("/:bookingId/payment", async (req, res) => {
   try {
     await releaseExpiredHolds();
 
+    
     const booking = await Booking.findById(bookingId);
 
     if (!booking) {
       return res.status(404).json({ message: "Booking not found." });
     }
+
+    if (
+      !booking.userId ||
+      booking.userId.toString() !== req.user.userId
+    ) {
+      return res.status(403).json({
+        message: "You are not authorized to pay for this booking.",
+      });
+    }
+
 
     if (booking.status === "CONFIRMED") {
       return res.status(409).json({

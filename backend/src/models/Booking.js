@@ -26,6 +26,11 @@ const passengerSchema = new mongoose.Schema(
 
 const bookingSchema = new mongoose.Schema(
   {
+        userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: false
+    },
     trainId: {
       type: String,
       required: true,
