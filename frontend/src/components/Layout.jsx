@@ -1,7 +1,9 @@
 
+import { navigate } from "../router";
+
 const STEPS = ["Train Search", "Passenger Details", "Payment", "Confirmation"];
 
-export function Header({ path }) {
+export function Header({ path, onLogout }) {
   const isLoggedIn = Boolean(sessionStorage.getItem("authToken"));
 
   const onSearch = path === "/";
@@ -10,10 +12,7 @@ export function Header({ path }) {
   return (
     <header className="site-header">
       <a href="#/" className="brand" aria-label="Railway Reservation home">
-        <div className="brand-mark" aria-hidden="true">
-          R
-        </div>
-
+        <div className="brand-mark" aria-hidden="true">🚆</div>
         <div>
           <span className="brand-title">Railway Reservation</span>
           <p>Search. Reserve. Travel.</p>
@@ -37,13 +36,20 @@ export function Header({ path }) {
           >
             PNR Lookup / Manage Booking
           </a>
+
+          <button
+            type="button"
+            className="logout-button"
+            onClick={onLogout}
+          >
+            Logout
+          </button>
         </nav>
       )}
     </header>
   );
 }
 
-// current: 0 search, 1 passengers, 2 payment, 3 confirmation
 export function ProgressSteps({ current }) {
   return (
     <ol className="progress-steps" aria-label="Booking progress">
@@ -58,7 +64,6 @@ export function ProgressSteps({ current }) {
           <span className="step-dot">
             {index < current ? "✓" : index + 1}
           </span>
-
           <span className="step-label">{label}</span>
         </li>
       ))}

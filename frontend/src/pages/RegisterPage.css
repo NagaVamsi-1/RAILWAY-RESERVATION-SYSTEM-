@@ -58,3 +58,14 @@
   opacity: 0.6;
   cursor: not-allowed;
 }
+
+.registration-form > button {
+  display: block;
+  margin-top: 14px;
+  position: relative;
+  clear: both;
+}
+
+.registration-form > p:last-of-type {
+  margin-bottom: 10px;
+}

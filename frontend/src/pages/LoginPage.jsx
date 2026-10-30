@@ -29,8 +29,11 @@ export default function LoginPage() {
       });
 
       sessionStorage.setItem("authToken", data.token);
-sessionStorage.setItem("authUser", JSON.stringify(data.user));
-navigate("/");
+      sessionStorage.setItem("authUser", JSON.stringify(data.user));
+
+      window.dispatchEvent(new Event("auth-change"));
+
+      navigate("/");
     } catch (err) {
       setError(err.message || "Login failed.");
     } finally {
