@@ -22,19 +22,45 @@ import WelcomePage from "./pages/WelcomePage";
 export default function App() {
   const { path, params } = useRoute();
   const [search, setSearch] = useState(loadSearch);
+  const [authToken, setAuthToken] = useState(
+    () => sessionStorage.getItem("authToken")
+  );
 
   useEffect(() => {
     saveSearch(search);
   }, [search]);
 
-  // Clear completed booking state and return to a clean search screen.
+  // Listen for successful login.
+  useEffect(() => {
+    function handleAuthChange() {
+      setAuthToken(sessionStorage.getItem("authToken"));
+    }
+
+    window.addEventListener("auth-change", handleAuthChange);
+
+    return () => {
+      window.removeEventListener("auth-change", handleAuthChange);
+    };
+  }, []);
+
+  function handleLogout() {
+    sessionStorage.removeItem("authToken");
+    sessionStorage.removeItem("authUser");
+
+    clearSearch();
+    setSearch({ ...emptySearch });
+    setAuthToken(null);
+
+    navigate("/login");
+  }
+
   function bookAnother() {
     clearSearch();
     setSearch({ ...emptySearch });
     navigate("/");
   }
 
-  const isLoggedIn = Boolean(sessionStorage.getItem("authToken"));
+  const isLoggedIn = Boolean(authToken);
 
   let page;
 
@@ -73,8 +99,6 @@ export default function App() {
     page = <SearchPage search={search} setSearch={setSearch} />;
   }
 
-  // Display Login as the active header route when a logged-out user
-  // is redirected away from a protected page.
   const headerPath =
     !isLoggedIn && path !== "/register" && path !== "/login"
       ? "/login"
@@ -93,7 +117,7 @@ export default function App() {
         Skip to content
       </a>
 
-      <Header path={headerPath} />
+      <Header path={headerPath} onLogout={handleLogout} />
 
       <main id="main-content" tabIndex={-1}>
         {page}
