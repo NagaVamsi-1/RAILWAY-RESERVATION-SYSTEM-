@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { API, request, formatMoney } from "../api";
+import { useI18n } from "../i18n/useI18n";
 import "./payment.css";
 
 // BL-11 – Online payment for a booking that is waiting in PENDING_PAYMENT (UC-04).
 export default function PaymentPanel({ booking, onPaid, onExpired, onSearchAgain }) {
+  const { t } = useI18n();
   const [method, setMethod] = useState("UPI");
   const [upiId, setUpiId] = useState("");
   const [card, setCard] = useState({ cardNumber: "", cardHolder: "", expiry: "", cvv: "" });
@@ -65,32 +67,34 @@ export default function PaymentPanel({ booking, onPaid, onExpired, onSearchAgain
 
   return (
     <div className="payment-panel">
-      <p className="eyebrow">PAYMENT</p>
-      <h3>Complete payment to confirm your booking</h3>
+      <p className="eyebrow">{t("pay.eyebrow")}</p>
+      <h3>{t(booking.isWaitlist ? "pay.titleWaitlist" : "pay.title")}</h3>
 
       <div className="payment-summary">
         <div>
-          <span>Fare per passenger</span>
+          <span>{t("pay.farePerPassenger")}</span>
           <strong>{formatMoney(booking.farePerPassenger)}</strong>
         </div>
         <div>
-          <span>Passengers</span>
+          <span>{t("pay.passengers")}</span>
           <strong>{booking.seatCount}</strong>
         </div>
         <div className="payment-total">
-          <span>Total payable</span>
+          <span>{t("pay.total")}</span>
           <strong>{formatMoney(booking.totalAmount)}</strong>
         </div>
       </div>
 
       <p className={`hold-timer ${msLeft < 60000 ? "urgent" : ""}`}>
         {expired
-          ? "Your seat hold has expired. Please search and book again."
-          : `Seats held for ${minutes}:${String(seconds).padStart(2, "0")}`}
+          ? t("pay.expired")
+          : t(booking.isWaitlist ? "pay.heldWaitlist" : "pay.held", {
+              time: `${minutes}:${String(seconds).padStart(2, "0")}`,
+            })}
       </p>
       {expired && onSearchAgain && (
         <button type="button" className="primary-button" onClick={onSearchAgain}>
-          Search trains &amp; book again
+          {t("common.searchAndBookAgain")}
         </button>
       )}
 
@@ -107,7 +111,7 @@ export default function PaymentPanel({ booking, onPaid, onExpired, onSearchAgain
               setError("");
             }}
           >
-            {item === "UPI" ? "UPI" : "Credit / Debit card"}
+            {item === "UPI" ? t("pay.upi") : t("pay.card")}
           </button>
         ))}
       </div>
@@ -115,7 +119,7 @@ export default function PaymentPanel({ booking, onPaid, onExpired, onSearchAgain
       <form className="payment-form" onSubmit={pay} aria-busy={processing}>
         {method === "UPI" ? (
           <label>
-            UPI ID
+            {t("pay.upiId")}
             <input
               value={upiId}
               onChange={(e) => setUpiId(e.target.value)}
@@ -127,7 +131,7 @@ export default function PaymentPanel({ booking, onPaid, onExpired, onSearchAgain
         ) : (
           <>
             <label>
-              Card number
+              {t("pay.cardNumber")}
               <input
                 inputMode="numeric"
                 value={card.cardNumber}
@@ -138,18 +142,18 @@ export default function PaymentPanel({ booking, onPaid, onExpired, onSearchAgain
               />
             </label>
             <label>
-              Name on card
+              {t("pay.cardHolder")}
               <input
                 value={card.cardHolder}
                 onChange={(e) => updateCard("cardHolder", e.target.value)}
-                placeholder="As printed on the card"
+                placeholder={t("pay.cardHolderPlaceholder")}
                 autoComplete="off"
                 required
               />
             </label>
             <div className="payment-row">
               <label>
-                Expiry (MM/YY)
+                {t("pay.expiry")}
                 <input
                   inputMode="numeric"
                   value={card.expiry}
@@ -160,7 +164,7 @@ export default function PaymentPanel({ booking, onPaid, onExpired, onSearchAgain
                 />
               </label>
               <label>
-                CVV
+                {t("pay.cvv")}
                 <input
                   type="password"
                   inputMode="numeric"
@@ -177,16 +181,20 @@ export default function PaymentPanel({ booking, onPaid, onExpired, onSearchAgain
         )}
 
         {error && <div className="alert error" role="alert">{error}</div>}
-        {processing && <p className="form-hint" role="status">Processing payment — please do not refresh or close this page.</p>}
+        {processing && <p className="form-hint" role="status">{t("pay.processingNote")}</p>}
 
         <button className="primary-button" type="submit" disabled={processing || expired}>
-          {processing ? "Processing payment..." : `Pay ${formatMoney(booking.totalAmount)}`}
+          {processing
+            ? t("pay.processing")
+            : t("pay.submit", { amount: formatMoney(booking.totalAmount) })}
         </button>
 
         <p className="form-hint">
-          Payment details are sent securely to the payment service and are never stored by this
-          system. Demo mode: a UPI ID ending in <code>@failbank</code> or card{" "}
-          <code>4000 0000 0000 0002</code> is declined; any other valid details succeed.
+          {t("pay.hint1")}
+          <code>@failbank</code>
+          {t("pay.hint2")}
+          <code>4000 0000 0000 0002</code>
+          {t("pay.hint3")}
         </p>
       </form>
     </div>

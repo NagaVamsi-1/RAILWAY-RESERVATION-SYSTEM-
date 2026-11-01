@@ -54,4 +54,20 @@ describe("BL-13: refund rules", () => {
     const r = calculateRefund({ ...booking, departure: undefined }, new Date());
     assert.equal(r.cancellable, false);
   });
+
+  test("BL-14: a waitlisted ticket is refunded in full at any time before departure", () => {
+    const waitlisted = { ...booking, status: "WAITLISTED" };
+    for (const hours of [72, 24, 6, 2]) {
+      const r = calculateRefund(waitlisted, hoursBefore(hours));
+      assert.equal(r.cancellable, true);
+      assert.equal(r.percentage, 100);
+      assert.equal(r.refundAmount, 850);
+      assert.equal(r.deduction, 0);
+    }
+  });
+
+  test("BL-14: a waitlisted ticket still cannot be cancelled after the train has departed", () => {
+    const r = calculateRefund({ ...booking, status: "WAITLISTED" }, new Date(departure.getTime() + 60_000));
+    assert.equal(r.cancellable, false);
+  });
 });

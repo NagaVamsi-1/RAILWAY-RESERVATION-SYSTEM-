@@ -1001,3 +1001,17 @@ input[aria-invalid="true"] { border-color: #c04646; }
   justify-content: center;
   border-radius: 0 !important;
 }
+
+/* ===== BL-15: language selector ===== */
+.header-actions { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; justify-content: flex-end; }
+.language-selector { display: flex; flex-direction: column; gap: 4px; min-width: 190px; }
+.language-selector label { display: flex; flex-direction: column; gap: 4px; color: #46546b; font-size: 11px; font-weight: 700; }
+.language-selector select { height: 38px; font-size: 13px; }
+.language-status { min-height: 16px; margin: 0; font-size: 11px; font-weight: 600; line-height: 1.4; max-width: 260px; }
+.language-status.ok { color: #176a3a; }
+.language-status.error { color: #a42e2e; }
+@media (max-width: 760px) {
+  .header-actions { width: 100%; justify-content: flex-start; }
+  .language-selector { width: 100%; }
+  .language-status { max-width: none; }
+}

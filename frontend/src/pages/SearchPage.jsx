@@ -1,9 +1,9 @@
-
 import { useState } from "react";
 import { API, request } from "../api";
 import { ProgressSteps } from "../components/Layout";
 import { navigate } from "../router";
 import { getToday, trainKey } from "../bookingFlow";
+import { useI18n } from "../i18n/useI18n";
 
 const CITIES = [
   "Bengaluru",
@@ -24,6 +24,7 @@ const CITIES = [
 ];
 
 export default function SearchPage({ search, setSearch }) {
+  const { t, city, train: getTrainName } = useI18n();
   const { source, destination, date, trains, selectedTrain } = search;
 
   const [viewedKey, setViewedKey] = useState(null);
@@ -34,6 +35,15 @@ export default function SearchPage({ search, setSearch }) {
   const patch = (changes) =>
     setSearch((current) => ({ ...current, ...changes }));
 
+  // Helper to resolve the localized train name using the i18n train helper
+  const resolveTrainName = (item) => {
+    if (!item) return t("search.nameUnavailable");
+    const num = item.number || item.id;
+    return getTrainName
+      ? getTrainName(num, item.name)
+      : item.name || t("search.nameUnavailable");
+  };
+
   async function searchTrains(event) {
     event.preventDefault();
     setError("");
@@ -41,7 +51,7 @@ export default function SearchPage({ search, setSearch }) {
     setViewedKey(null);
 
     if (source === destination) {
-      setError("Departure and destination cities must be different.");
+      setError(t("search.sameCity"));
       setLoading(false);
       setSearched(true);
       patch({ trains: [], selectedTrain: null, travelClass: "" });
@@ -66,7 +76,7 @@ export default function SearchPage({ search, setSearch }) {
       });
     } catch (err) {
       patch({ trains: [], selectedTrain: null, travelClass: "" });
-      setError(err.message || "Unable to search for trains.");
+      setError(err.message || t("search.failed"));
     } finally {
       setSearched(true);
       setLoading(false);
@@ -77,7 +87,7 @@ export default function SearchPage({ search, setSearch }) {
     patch({
       source: value,
       ...(value === destination
-        ? { destination: CITIES.find((city) => city !== value) || "" }
+        ? { destination: CITIES.find((item) => item !== value) || "" }
         : {}),
     });
   }
@@ -86,9 +96,9 @@ export default function SearchPage({ search, setSearch }) {
     setViewedKey((current) => (current === key ? null : key));
   }
 
-  function selectAndBook(event, train, travelClass) {
+  function selectAndBook(event, selected, travelClass) {
     event.stopPropagation();
-    patch({ selectedTrain: train, travelClass });
+    patch({ selectedTrain: selected, travelClass });
     navigate("/passengers");
   }
 
@@ -97,52 +107,49 @@ export default function SearchPage({ search, setSearch }) {
       <ProgressSteps current={0} />
 
       <section className="hero">
-        <p className="eyebrow">YOUR JOURNEY STARTS HERE</p>
-        <h2>Find your next train.</h2>
-        <p>
-          Compare train timings, explore available classes and choose your
-          journey.
-        </p>
+        <p className="eyebrow">{t("search.eyebrow")}</p>
+        <h2>{t("search.title")}</h2>
+        <p>{t("search.intro")}</p>
 
         <form className="search-form" onSubmit={searchTrains}>
           <label>
-            From
+            {t("search.from")}
             <select
               value={source}
               onChange={(event) => changeSource(event.target.value)}
               required
             >
-              <option value="">Select departure city</option>
-              {CITIES.map((city) => (
-                <option value={city} key={city}>
-                  {city}
+              <option value="">{t("search.selectFrom")}</option>
+              {CITIES.map((name) => (
+                <option value={name} key={name}>
+                  {city(name)}
                 </option>
               ))}
             </select>
           </label>
 
           <label>
-            To
+            {t("search.to")}
             <select
               value={destination}
               onChange={(event) => patch({ destination: event.target.value })}
               required
             >
-              <option value="">Select destination city</option>
-              {CITIES.map((city) => (
+              <option value="">{t("search.selectTo")}</option>
+              {CITIES.map((name) => (
                 <option
-                  value={city}
-                  key={city}
-                  disabled={city === source}
+                  value={name}
+                  key={name}
+                  disabled={name === source}
                 >
-                  {city}
+                  {city(name)}
                 </option>
               ))}
             </select>
           </label>
 
           <label className="date-field">
-            Journey date
+            {t("search.date")}
             <span className="date-input-wrap">
               <input
                 id="journey-date"
@@ -156,7 +163,7 @@ export default function SearchPage({ search, setSearch }) {
               <button
                 className="calendar-button"
                 type="button"
-                aria-label="Open journey date calendar"
+                aria-label={t("search.openCalendar")}
                 onClick={(event) => {
                   event.stopPropagation();
                   const input = document.getElementById("journey-date");
@@ -189,7 +196,7 @@ export default function SearchPage({ search, setSearch }) {
           </label>
 
           <button type="submit" disabled={loading}>
-            {loading ? "Searching..." : "Search trains"}
+            {loading ? t("search.searching") : t("search.submit")}
           </button>
         </form>
       </section>
@@ -203,40 +210,41 @@ export default function SearchPage({ search, setSearch }) {
       <section className="content-section">
         <div className="section-heading">
           <div>
-            <p className="eyebrow">AVAILABLE SERVICES</p>
-            <h2>Train results</h2>
+            <p className="eyebrow">{t("search.resultsEyebrow")}</p>
+            <h2>{t("search.resultsTitle")}</h2>
           </div>
 
           <span className="result-count">
-            {trains.length} {trains.length === 1 ? "train" : "trains"}
+            {t("search.count", { count: trains.length })}
           </span>
         </div>
 
         {loading ? (
           <div className="empty-state" role="status">
             <div className="spinner" aria-hidden="true" />
-            <p>Searching for trains...</p>
+            <p>{t("search.searchingTrains")}</p>
           </div>
         ) : trains.length === 0 ? (
           <div className="empty-state">
             <h3>
               {searched && !error
-                ? "No trains found"
-                : "No results to display"}
+                ? t("search.noneFound")
+                : t("search.noResults")}
             </h3>
             <p>
               {searched && !error
-                ? "No trains found for this route and date. Try another date or route."
-                : "Select your departure city, destination and journey date to search."}
+                ? t("search.noneFoundText")
+                : t("search.noResultsText")}
             </p>
           </div>
         ) : (
           <div className="train-list">
-            {trains.map((train) => {
-              const key = trainKey(train);
+            {trains.map((trainItem) => {
+              const key = trainKey(trainItem);
               const isViewed = viewedKey === key;
               const isSelected = trainKey(selectedTrain) === key;
-              const classes = train.classes || [];
+              const classes = trainItem.classes || [];
+              const localizedName = resolveTrainName(trainItem);
 
               return (
                 <article
@@ -257,16 +265,17 @@ export default function SearchPage({ search, setSearch }) {
                     toggleDetails(key);
                   }}
                   tabIndex={0}
-                  aria-label={`${train.name || "Train"} details. Click to ${
-                    isViewed ? "hide" : "view"
-                  } details.`}
+                  aria-label={t(
+                    isViewed ? "search.ariaHide" : "search.ariaView",
+                    { name: localizedName }
+                  )}
                 >
                   <div className="train-main">
                     <div>
                       <span className="train-number">
-                        TRAIN {train.number || train.id}
+                        {t("common.train", { number: trainItem.number || trainItem.id })}
                       </span>
-                      <h3>{train.name || "Train name unavailable"}</h3>
+                      <h3>{localizedName}</h3>
                     </div>
 
                     <button
@@ -279,29 +288,29 @@ export default function SearchPage({ search, setSearch }) {
                         toggleDetails(key);
                       }}
                     >
-                      {isViewed ? "Hide details" : "View details"}
+                      {isViewed ? t("search.hideDetails") : t("search.viewDetails")}
                     </button>
                   </div>
 
                   <div className="route-line">
                     <div>
-                      <strong>{train.departure || "--:--"}</strong>
-                      <span>{train.source || source}</span>
+                      <strong>{trainItem.departure || "--:--"}</strong>
+                      <span>{city(trainItem.source || source)}</span>
                     </div>
 
                     <div className="route-duration">
-                      <span>{train.duration || "Duration unavailable"}</span>
+                      <span>{trainItem.duration || t("search.durationUnavailable")}</span>
                       <div className="route-track" />
                     </div>
 
                     <div className="route-destination">
-                      <strong>{train.arrival || "--:--"}</strong>
-                      <span>{train.destination || destination}</span>
+                      <strong>{trainItem.arrival || "--:--"}</strong>
+                      <span>{city(trainItem.destination || destination)}</span>
                     </div>
                   </div>
 
                   <div className="details-class-section">
-                    <h4>Available travel classes</h4>
+                    <h4>{t("search.availableClasses")}</h4>
 
                     {classes.length > 0 ? (
                       <div className="class-list">
@@ -313,54 +322,60 @@ export default function SearchPage({ search, setSearch }) {
                       </div>
                     ) : (
                       <p className="detail-unavailable">
-                        Class information is not available.
+                        {t("search.classUnavailable")}
                       </p>
                     )}
                   </div>
 
                   {isViewed && (
                     <div className="train-details" id={`details-${key}`}>
-                      <h4>Train details</h4>
+                      <h4>{t("search.trainDetails")}</h4>
 
                       <div className="train-details-grid">
                         <p>
-                          <strong>Train number</strong>
+                          <strong>{t("search.trainNumber")}</strong>
                           <span>
-                            {train.number || train.id || "Not available"}
+                            {trainItem.number || trainItem.id || t("common.notAvailable")}
                           </span>
                         </p>
                         <p>
-                          <strong>Train name</strong>
-                          <span>{train.name || "Not available"}</span>
+                          <strong>{t("search.trainName")}</strong>
+                          <span>{localizedName}</span>
                         </p>
                         <p>
-                          <strong>Origin</strong>
-                          <span>{train.source || "Not available"}</span>
+                          <strong>{t("search.origin")}</strong>
+                          <span>
+                            {trainItem.source ? city(trainItem.source) : t("common.notAvailable")}
+                          </span>
                         </p>
                         <p>
-                          <strong>Destination</strong>
-                          <span>{train.destination || "Not available"}</span>
+                          <strong>{t("search.destination")}</strong>
+                          <span>
+                            {trainItem.destination
+                              ? city(trainItem.destination)
+                              : t("common.notAvailable")}
+                          </span>
                         </p>
                         <p>
-                          <strong>Departure</strong>
-                          <span>{train.departure || "Not available"}</span>
+                          <strong>{t("search.departure")}</strong>
+                          <span>{trainItem.departure || t("common.notAvailable")}</span>
                         </p>
                         <p>
-                          <strong>Arrival</strong>
-                          <span>{train.arrival || "Not available"}</span>
+                          <strong>{t("search.arrival")}</strong>
+                          <span>{trainItem.arrival || t("common.notAvailable")}</span>
                         </p>
                         <p>
-                          <strong>Journey duration</strong>
-                          <span>{train.duration || "Not available"}</span>
+                          <strong>{t("search.duration")}</strong>
+                          <span>{trainItem.duration || t("common.notAvailable")}</span>
                         </p>
                         <p>
-                          <strong>Journey date</strong>
-                          <span>{date || "Not available"}</span>
+                          <strong>{t("common.journeyDate")}</strong>
+                          <span>{date || t("common.notAvailable")}</span>
                         </p>
                       </div>
 
                       <div className="details-class-section">
-                        <h4>Choose a travel class</h4>
+                        <h4>{t("search.chooseClass")}</h4>
 
                         {classes.length > 0 ? (
                           <div className="details-class-options">
@@ -368,24 +383,24 @@ export default function SearchPage({ search, setSearch }) {
                               <div className="details-class-option" key={item}>
                                 <div>
                                   <strong>{item}</strong>
-                                  <span>Travel class</span>
+                                  <span>{t("search.travelClass")}</span>
                                 </div>
 
                                 <button
                                   className="primary-button"
                                   type="button"
                                   onClick={(event) =>
-                                    selectAndBook(event, train, item)
+                                    selectAndBook(event, trainItem, item)
                                   }
                                 >
-                                  Select class
+                                  {t("search.selectClass")}
                                 </button>
                               </div>
                             ))}
                           </div>
                         ) : (
                           <p className="detail-unavailable">
-                            No travel classes are listed for this train.
+                            {t("search.noClasses")}
                           </p>
                         )}
                       </div>

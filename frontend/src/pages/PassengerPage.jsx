@@ -3,6 +3,7 @@ import { API, request } from "../api";
 import { ProgressSteps } from "../components/Layout";
 import { navigate } from "../router";
 import { trainKey } from "../bookingFlow";
+import { useI18n } from "../i18n/useI18n";
 
 const MAX_PASSENGERS = 6;
 const blankPassenger = () => ({ name: "", age: "", gender: "Male" });
@@ -11,6 +12,7 @@ const blankPassenger = () => ({ name: "", age: "", gender: "Male" });
 // does not expose it before booking, so no estimate is shown here; the exact
 // fare appears on the payment page.
 export default function PassengerPage({ search, setSearch }) {
+  const { t, city } = useI18n();
   const { selectedTrain, date, travelClass } = search;
   const [availability, setAvailability] = useState(null);
   const [availError, setAvailError] = useState("");
@@ -19,8 +21,15 @@ export default function PassengerPage({ search, setSearch }) {
   const [fieldErrors, setFieldErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  // Bumped to load the seat availability again (for example after the server says it changed).
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const trainId = selectedTrain ? trainKey(selectedTrain) : "";
+
+  // BL-14: when the class cannot seat everyone, the passenger may join the waitlist instead.
+  const waitlistMode = Boolean(availability) && passengers.length > availability.availableSeats;
+  const waitlistRoom = availability?.waitlistSeatsRemaining ?? 0;
+  const waitlistFull = waitlistMode && waitlistRoom < passengers.length;
 
   useEffect(() => {
     if (!trainId || !travelClass) return undefined;
@@ -44,17 +53,17 @@ export default function PassengerPage({ search, setSearch }) {
     return () => {
       cancelled = true;
     };
-  }, [trainId, date, travelClass]);
+  }, [trainId, date, travelClass, refreshKey]);
 
   if (!selectedTrain) {
     return (
       <>
         <ProgressSteps current={1} />
         <div className="empty-state">
-          <h3>No train selected</h3>
-          <p>Search for a train and choose Select Train &amp; Book to continue.</p>
+          <h3>{t("passenger.noTrain")}</h3>
+          <p>{t("passenger.noTrainText")}</p>
           <button className="primary-button" type="button" onClick={() => navigate("/")}>
-            Search trains
+            {t("common.searchTrains")}
           </button>
         </div>
       </>
@@ -76,12 +85,12 @@ export default function PassengerPage({ search, setSearch }) {
     const errors = {};
     passengers.forEach((p, i) => {
       const age = Number(p.age);
-      if (!p.name.trim()) errors[`${i}.name`] = "Enter the passenger's name.";
+      if (!p.name.trim()) errors[`${i}.name`] = t("passenger.errName");
       if (p.age === "" || !Number.isInteger(age) || age < 1 || age > 120) {
-        errors[`${i}.age`] = "Age must be a whole number from 1 to 120.";
+        errors[`${i}.age`] = t("passenger.errAge");
       }
       if (!["Male", "Female", "Other"].includes(p.gender)) {
-        errors[`${i}.gender`] = "Select a gender.";
+        errors[`${i}.gender`] = t("passenger.errGender");
       }
     });
     setFieldErrors(errors);
@@ -94,11 +103,11 @@ export default function PassengerPage({ search, setSearch }) {
     setError("");
 
     if (!validate()) {
-      setError("Please correct the highlighted passenger details.");
+      setError(t("passenger.errFix"));
       return;
     }
-    if (availability && passengers.length > availability.availableSeats) {
-      setError(`Only ${availability.availableSeats} seat(s) are available in ${travelClass}.`);
+    if (waitlistFull) {
+      setError(t("passenger.waitlistFull", { count: passengers.length }));
       return;
     }
 
@@ -111,6 +120,8 @@ export default function PassengerPage({ search, setSearch }) {
           trainId,
           journeyDate: date,
           travelClass,
+          // Only asks for a waitlist place when the class cannot seat everyone.
+          ...(waitlistMode ? { joinWaitlist: true } : {}),
           passengers: passengers.map((p) => ({
             name: p.name.trim(),
             age: Number(p.age),
@@ -119,11 +130,13 @@ export default function PassengerPage({ search, setSearch }) {
         }),
       });
 
-      if (!data.booking?._id) throw new Error("Booking could not be created. Please try again.");
+      if (!data.booking?._id) throw new Error(t("passenger.errCreate"));
       navigate(`/payment/${data.booking._id}`);
     } catch (err) {
       // Stay on this page and keep everything the user entered.
       setError(err.message);
+      // The seat count changed since the page loaded: show the current numbers.
+      if (err.status === 409) setRefreshKey((key) => key + 1);
     } finally {
       setSubmitting(false);
     }
@@ -136,8 +149,8 @@ export default function PassengerPage({ search, setSearch }) {
       <section className="content-section booking-section">
         <div className="section-heading">
           <div>
-            <p className="eyebrow">RESERVATION</p>
-            <h2>Passenger details</h2>
+            <p className="eyebrow">{t("passenger.eyebrow")}</p>
+            <h2>{t("passenger.title")}</h2>
           </div>
           <span className="result-count">{selectedTrain.number}</span>
         </div>
@@ -145,14 +158,16 @@ export default function PassengerPage({ search, setSearch }) {
         <div className="selected-train">
           <h3>{selectedTrain.name}</h3>
           <p>
-            {selectedTrain.source} → {selectedTrain.destination} · {date}
-            {selectedTrain.departure ? ` · departs ${selectedTrain.departure}` : ""}
-            {` · Class ${travelClass}`}
+            {city(selectedTrain.source)} → {city(selectedTrain.destination)} · {date}
+            {selectedTrain.departure
+              ? ` · ${t("common.departs", { time: selectedTrain.departure })}`
+              : ""}
+            {` · ${t("passenger.classLabel", { class: travelClass })}`}
           </p>
         </div>
 
         <label className="field-label">
-          Travel class
+          {t("passenger.travelClass")}
           <select
             value={travelClass}
             onChange={(e) => setSearch((c) => ({ ...c, travelClass: e.target.value }))}
@@ -164,27 +179,41 @@ export default function PassengerPage({ search, setSearch }) {
         </label>
 
         <div aria-live="polite">
-          {availLoading && <p className="form-hint">Checking seat availability…</p>}
+          {availLoading && <p className="form-hint">{t("passenger.checking")}</p>}
           {availError && <div className="alert error" role="alert">{availError}</div>}
           {availability && (
             <div className="availability-card">
-              <div><span>Available seats</span><strong>{availability.availableSeats}</strong></div>
-              <div><span>Total seats</span><strong>{availability.totalSeats}</strong></div>
-              <div><span>Class</span><strong>{availability.travelClass}</strong></div>
+              <div><span>{t("passenger.availableSeats")}</span><strong>{availability.availableSeats}</strong></div>
+              <div><span>{t("passenger.totalSeats")}</span><strong>{availability.totalSeats}</strong></div>
+              <div><span>{t("passenger.class")}</span><strong>{availability.travelClass}</strong></div>
+            </div>
+          )}
+
+          {waitlistMode && (
+            <div className="waitlist-offer" role="note">
+              <h4>{t("passenger.waitlistTitle")}</h4>
+              <p>
+                {t("passenger.waitlistText", {
+                  available: availability.availableSeats,
+                  count: passengers.length,
+                })}
+              </p>
+              <p className="waitlist-room">
+                {waitlistFull
+                  ? t("passenger.waitlistFull", { count: passengers.length })
+                  : t("passenger.waitlistRoom", { count: waitlistRoom })}
+              </p>
             </div>
           )}
         </div>
 
         <form className="passenger-form" onSubmit={submit} noValidate>
-          <p className="form-hint">
-            Add up to six passengers. All passenger details are required. The exact fare is
-            confirmed by the booking system and shown on the payment page.
-          </p>
+          <p className="form-hint">{t("passenger.hint")}</p>
 
           {passengers.map((passenger, index) => (
             <div className="passenger-card" key={index}>
               <div className="passenger-title">
-                <strong>Passenger {index + 1}</strong>
+                <strong>{t("passenger.number", { index: index + 1 })}</strong>
                 {passengers.length > 1 && (
                   <button
                     type="button"
@@ -194,45 +223,45 @@ export default function PassengerPage({ search, setSearch }) {
                       setFieldErrors({});
                     }}
                   >
-                    Remove
+                    {t("passenger.remove")}
                   </button>
                 )}
               </div>
 
               <div className="passenger-fields">
                 <label>
-                  Full name
+                  {t("passenger.fullName")}
                   <input
                     value={passenger.name}
                     onChange={(e) => updatePassenger(index, "name", e.target.value)}
-                    placeholder="Passenger name"
+                    placeholder={t("passenger.namePlaceholder")}
                     maxLength={100}
                     aria-invalid={Boolean(fieldErrors[`${index}.name`])}
                   />
                   {fieldErrors[`${index}.name`] && <small className="field-error">{fieldErrors[`${index}.name`]}</small>}
                 </label>
                 <label>
-                  Age
+                  {t("passenger.age")}
                   <input
                     type="number"
                     min="1"
                     max="120"
                     value={passenger.age}
                     onChange={(e) => updatePassenger(index, "age", e.target.value)}
-                    placeholder="Age"
+                    placeholder={t("passenger.agePlaceholder")}
                     aria-invalid={Boolean(fieldErrors[`${index}.age`])}
                   />
                   {fieldErrors[`${index}.age`] && <small className="field-error">{fieldErrors[`${index}.age`]}</small>}
                 </label>
                 <label>
-                  Gender
+                  {t("passenger.gender")}
                   <select
                     value={passenger.gender}
                     onChange={(e) => updatePassenger(index, "gender", e.target.value)}
                   >
-                    <option value="Male">Male</option>
-                    <option value="Female">Female</option>
-                    <option value="Other">Other</option>
+                    <option value="Male">{t("gender.Male")}</option>
+                    <option value="Female">{t("gender.Female")}</option>
+                    <option value="Other">{t("gender.Other")}</option>
                   </select>
                   {fieldErrors[`${index}.gender`] && <small className="field-error">{fieldErrors[`${index}.gender`]}</small>}
                 </label>
@@ -246,22 +275,32 @@ export default function PassengerPage({ search, setSearch }) {
             disabled={passengers.length >= MAX_PASSENGERS}
             onClick={() => setPassengers((c) => [...c, blankPassenger()])}
           >
-            Add passenger ({passengers.length}/{MAX_PASSENGERS})
+            {t("passenger.add", { count: passengers.length, max: MAX_PASSENGERS })}
           </button>
 
           {error && <div className="alert error" role="alert">{error}</div>}
 
           <div className="button-row form-actions">
             <button type="button" className="secondary-button" disabled={submitting} onClick={() => navigate("/")}>
-              ← Back to train search
+              {t("passenger.back")}
             </button>
-            <button className="primary-button" type="submit" disabled={submitting || availLoading}>
-              {submitting ? "Creating booking…" : "Confirm Booking & Continue to Payment"}
+            <button
+              className="primary-button"
+              type="submit"
+              disabled={submitting || availLoading || waitlistFull}
+            >
+              {submitting
+                ? t("passenger.submitting")
+                : waitlistMode
+                  ? t("passenger.waitlistSubmit")
+                  : t("passenger.submit")}
             </button>
           </div>
           {passengers.length > 0 && availability && (
             <p className="form-hint">
-              {passengers.length} passenger(s) · Seats are held for a limited time after you continue.
+              {t(waitlistMode ? "passenger.waitlistHoldHint" : "passenger.holdHint", {
+                count: passengers.length,
+              })}
             </p>
           )}
         </form>

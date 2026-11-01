@@ -1,5 +1,6 @@
 
 const mongoose = require("mongoose");
+const { LANGUAGE_CODES } = require("../config/languages");
 
 const userSchema = new mongoose.Schema(
   {
@@ -21,6 +22,11 @@ const userSchema = new mongoose.Schema(
       type: String,
       required: true,
       select: false,
+    },
+    // BL-15: the passenger's chosen interface language (unset until they pick one).
+    preferredLanguage: {
+      type: String,
+      enum: LANGUAGE_CODES,
     },
   },
   { timestamps: true }

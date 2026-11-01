@@ -1,4 +1,3 @@
-const crypto = require("node:crypto");
 const express = require("express");
 const mongoose = require("mongoose");
 
@@ -6,7 +5,12 @@ const Booking = require("../models/Booking");
 const SeatAvailability = require("../models/SeatAvailability");
 const { validatePaymentDetails, processPayment } = require("../services/payment");
 const { generatePnr, isValidPnrFormat } = require("../services/pnr");
-const { calculateRefund } = require("../services/refund");
+const { calculateRefund, generateRefundId } = require("../services/refund");
+const {
+  keyOf,
+  promoteWaitlist,
+  syncWaitlistedBooking,
+} = require("../services/waitlist");
 const { releaseExpiredHolds } = require("../services/holds");
 const { toPublicBooking } = require("../services/publicBooking");
 const authenticateToken = require("../middleware/auth");
@@ -15,6 +19,9 @@ const router = express.Router();
 
 
 const DUPLICATE_KEY = 11000;
+
+// BL-13 / BL-14: confirmed tickets and waitlisted tickets can be cancelled.
+const CANCELLABLE_STATUSES = ["CONFIRMED", "WAITLISTED"];
 
 // ---------------------------------------------------------------------------
 // BL-11: Pay for a booking (UC-04 steps 4-6)
@@ -95,6 +102,9 @@ router.post("/:bookingId/payment", authenticateToken, async (req, res) => {
     }
 
     // Payment succeeded: confirm the booking and generate a unique PNR (BL-12).
+    // A booking made against the waitlist (BL-14) gets its PNR too but joins the queue
+    // as WAITLISTED instead of being confirmed straight away.
+    const joiningWaitlist = Boolean(booking.isWaitlist);
     let confirmed = null;
 
     for (let attempt = 0; attempt < 5 && !confirmed; attempt++) {
@@ -103,7 +113,8 @@ router.post("/:bookingId/payment", authenticateToken, async (req, res) => {
           { _id: booking._id, status: "PENDING_PAYMENT" },
           {
             $set: {
-              status: "CONFIRMED",
+              status: joiningWaitlist ? "WAITLISTED" : "CONFIRMED",
+              ...(joiningWaitlist ? { waitlistedAt: new Date() } : {}),
               pnr: generatePnr(),
               payment: {
                 paymentId: result.paymentId,
@@ -131,8 +142,22 @@ router.post("/:bookingId/payment", authenticateToken, async (req, res) => {
       });
     }
 
+    let message = "Payment successful. Your booking is confirmed.";
+
+    if (joiningWaitlist) {
+      // Seats may already be free (for example after a cancellation while the passenger was
+      // paying): clear the queue now so the response shows the true status.
+      await promoteWaitlist(keyOf(confirmed));
+      confirmed = (await Booking.findById(confirmed._id)) || confirmed;
+
+      message =
+        confirmed.status === "CONFIRMED"
+          ? "Payment successful. Seats were available, so your ticket is confirmed."
+          : "Payment successful. Your ticket is on the waitlist and will be confirmed automatically if seats become available.";
+    }
+
     return res.status(200).json({
-      message: "Payment successful. Your booking is confirmed.",
+      message,
       booking: toPublicBooking(confirmed),
     });
   } catch (error) {
@@ -153,11 +178,14 @@ router.get("/pnr/:pnr", async (req, res) => {
   }
 
   try {
-    const booking = await Booking.findOne({ pnr });
+    let booking = await Booking.findOne({ pnr });
 
     if (!booking) {
       return res.status(404).json({ message: "No booking found for this PNR." });
     }
+
+    // BL-14: a waitlisted ticket may have been confirmed (or auto-cancelled) since it was saved.
+    booking = await syncWaitlistedBooking(booking);
 
     return res.status(200).json({ booking: toPublicBooking(booking) });
   } catch (error) {
@@ -178,16 +206,21 @@ router.get("/pnr/:pnr/refund-preview", async (req, res) => {
   }
 
   try {
-    const booking = await Booking.findOne({ pnr }).lean();
+    let booking = await Booking.findOne({ pnr }).lean();
 
     if (!booking) {
       return res.status(404).json({ message: "No booking found for this PNR." });
     }
+
+    booking = await syncWaitlistedBooking(booking);
+
     if (booking.status === "CANCELLED") {
       return res.status(409).json({ message: "This ticket is already cancelled." });
     }
-    if (booking.status !== "CONFIRMED") {
-      return res.status(400).json({ message: "Only confirmed tickets can be cancelled." });
+    if (!CANCELLABLE_STATUSES.includes(booking.status)) {
+      return res
+        .status(400)
+        .json({ message: "Only confirmed or waitlisted tickets can be cancelled." });
     }
 
     const refund = calculateRefund(booking);
@@ -215,18 +248,22 @@ router.post("/pnr/:pnr/cancel", async (req, res) => {
   }
 
   try {
-    const booking = await Booking.findOne({ pnr }).lean();
+    let booking = await Booking.findOne({ pnr }).lean();
 
     if (!booking) {
       return res.status(404).json({ message: "No booking found for this PNR." });
     }
 
+    booking = await syncWaitlistedBooking(booking);
+
     // UC-06 alternate flow: a ticket cannot be cancelled twice.
     if (booking.status === "CANCELLED") {
       return res.status(409).json({ message: "This ticket is already cancelled." });
     }
-    if (booking.status !== "CONFIRMED") {
-      return res.status(400).json({ message: "Only confirmed tickets can be cancelled." });
+    if (!CANCELLABLE_STATUSES.includes(booking.status)) {
+      return res
+        .status(400)
+        .json({ message: "Only confirmed or waitlisted tickets can be cancelled." });
     }
 
     const refund = calculateRefund(booking);
@@ -239,14 +276,17 @@ router.post("/pnr/:pnr/cancel", async (req, res) => {
 
     // Atomic status guard: if two cancel requests arrive together only one succeeds,
     // so seats are never released twice (NFR-03 / NFR-06).
+    const wasConfirmed = booking.status === "CONFIRMED";
+
     const cancelled = await Booking.findOneAndUpdate(
-      { _id: booking._id, status: "CONFIRMED" },
+      { _id: booking._id, status: booking.status },
       {
         $set: {
           status: "CANCELLED",
           cancelledAt: now,
+          cancellationReason: "PASSENGER",
           refund: {
-            refundId: `RFN${crypto.randomBytes(6).toString("hex").toUpperCase()}`,
+            refundId: generateRefundId(),
             status: refund.refundAmount > 0 ? "PROCESSED" : "NOT_ELIGIBLE",
             percentage: refund.percentage,
             amount: refund.refundAmount,
@@ -262,14 +302,14 @@ router.post("/pnr/:pnr/cancel", async (req, res) => {
       return res.status(409).json({ message: "This ticket is already cancelled." });
     }
 
-    await SeatAvailability.updateOne(
-      {
-        trainId: booking.trainId,
-        journeyDate: booking.journeyDate,
-        travelClass: booking.travelClass,
-      },
-      { $inc: { availableSeats: booking.seatCount } }
-    );
+    // A waitlisted ticket never held a seat, so only confirmed tickets release seats.
+    // The freed seats then go to the passengers waiting in the queue (BL-14).
+    if (wasConfirmed) {
+      await SeatAvailability.updateOne(keyOf(booking), {
+        $inc: { availableSeats: booking.seatCount },
+      });
+      await promoteWaitlist(keyOf(booking));
+    }
 
     const message =
       refund.refundAmount > 0

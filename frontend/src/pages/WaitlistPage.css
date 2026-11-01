@@ -1,0 +1,33 @@
+/* BL-14: waitlist monitoring page */
+.waitlist-intro { margin: 0 0 18px; }
+.waitlist-checked { margin-top: 22px; }
+.waitlist-checked h3,
+.waitlist-list-heading h3 { margin: 0; font-size: 18px; }
+.waitlist-checked .waitlist-card { margin: 12px 0; }
+.waitlist-list-heading { margin-top: 30px; flex-wrap: wrap; }
+.waitlist-refresh { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; color: #68778c; font-size: 12px; }
+.waitlist-list { display: grid; gap: 14px; }
+
+.waitlist-card {
+  padding: 20px;
+  border: 1px solid #f0d9a8;
+  border-radius: 12px;
+  background: #fffaf0;
+}
+.waitlist-card.highlight { box-shadow: 0 0 0 3px rgb(15 139 141 / 18%); }
+.waitlist-card.state-confirmed { border-color: #b9e5cc; background: #f4fbf6; }
+.waitlist-card.state-cancelled,
+.waitlist-card.state-not_cleared { border-color: #f0c4c4; background: #fff8f8; }
+.waitlist-card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 14px; }
+.waitlist-position { display: flex; align-items: center; gap: 16px; margin-bottom: 18px; padding: 14px 16px; border-radius: 10px; background: #fff; }
+.waitlist-position p { margin: 0; color: #46546b; font-size: 14px; line-height: 1.5; }
+.waitlist-label { flex: none; padding: 8px 14px; border-radius: 8px; background: var(--navy); color: #fff; font-size: 22px; font-weight: 800; letter-spacing: 1px; }
+
+.status-badge.waitlisted { background: #fff4dc; color: #7a5000; }
+.ticket-banner.waitlisted { background: #8a5b00; }
+.ticket-banner.waitlisted .success-icon { color: #8a5b00; }
+
+.waitlist-offer { margin-top: 18px; padding: 16px; border: 1px solid #f0d9a8; border-radius: 10px; background: #fffaf0; text-align: left; }
+.waitlist-offer h4 { margin: 0 0 8px; }
+.waitlist-offer p { margin: 0 0 8px; color: #46546b; font-size: 13px; line-height: 1.6; }
+.waitlist-offer .waitlist-room { margin: 0; font-weight: 700; }

@@ -3,8 +3,10 @@ import { useState } from "react";
 import { API, request } from "../api";
 import "./RegisterPage.css";
 import { navigate } from "../router";
+import { useI18n } from "../i18n/useI18n";
 
 export default function LoginPage() {
+  const { t, syncAfterLogin } = useI18n();
   const [form, setForm] = useState({ email: "", password: "" });
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -33,9 +35,12 @@ export default function LoginPage() {
 
       window.dispatchEvent(new Event("auth-change"));
 
+      // BL-15: use the language saved on the account (or save the one already chosen).
+      await syncAfterLogin(data.user);
+
       navigate("/");
     } catch (err) {
-      setError(err.message || "Login failed.");
+      setError(err.message || t("login.failed"));
     } finally {
       setLoading(false);
     }
@@ -43,12 +48,12 @@ export default function LoginPage() {
 
   return (
     <section className="page-section registration-page">
-      <h1>Login</h1>
-      <p>Sign in to your Railway Reservation account.</p>
+      <h1>{t("login.title")}</h1>
+      <p>{t("login.subtitle")}</p>
 
       <form className="registration-form" onSubmit={handleSubmit}>
         <p>
-          <label htmlFor="login-email">Email address</label>
+          <label htmlFor="login-email">{t("login.email")}</label>
           <input
             id="login-email"
             name="email"
@@ -61,7 +66,7 @@ export default function LoginPage() {
         </p>
 
         <p>
-          <label htmlFor="login-password">Password</label>
+          <label htmlFor="login-password">{t("login.password")}</label>
           <input
             id="login-password"
             name="password"
@@ -78,7 +83,7 @@ export default function LoginPage() {
           type="submit"
           disabled={loading}
         >
-          {loading ? "Logging in..." : "Login"}
+          {loading ? t("login.loading") : t("login.submit")}
         </button>
 
         {message && <p role="status">{message}</p>}

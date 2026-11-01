@@ -1,15 +1,19 @@
 import { useEffect, useState } from "react";
 import { API, request, formatMoney } from "../api";
+import { navigate } from "../router";
+import { useI18n } from "../i18n/useI18n";
+import { StatusBadge } from "./BookingSummary";
 import "./payment.css";
 
-function formatLeadTime(hours) {
-  if (hours >= 48) return `${Math.round(hours / 24)} days`;
-  return `${Math.round(hours)} hours`;
+function formatLeadTime(hours, t) {
+  if (hours >= 48) return t("common.days", { count: Math.round(hours / 24) });
+  return t("common.hours", { count: Math.round(hours) });
 }
 
 // BL-12 – View booking confirmation by PNR (UC-05)
 // BL-13 – Cancel ticket and see refund status (UC-06)
 export default function PnrLookup({ initialBooking = null, initialPnr = "" }) {
+  const { t, city, lang } = useI18n();
   const [pnr, setPnr] = useState(initialBooking?.pnr || initialPnr || "");
   const [booking, setBooking] = useState(initialBooking);
   const [preview, setPreview] = useState(null);
@@ -24,7 +28,7 @@ export default function PnrLookup({ initialBooking = null, initialPnr = "" }) {
     setBooking(null);
 
     if (!/^[1-9]\d{9}$/.test(value)) {
-      setError("Enter a valid 10-digit PNR number.");
+      setError(t("pnr.invalid"));
       return;
     }
 
@@ -91,24 +95,24 @@ export default function PnrLookup({ initialBooking = null, initialPnr = "" }) {
     <section className="content-section lookup-section">
       <div className="section-heading">
         <div>
-          <p className="eyebrow">YOUR RESERVATION</p>
-          <h2>Booking details &amp; cancellation</h2>
+          <p className="eyebrow">{t("pnr.eyebrow")}</p>
+          <h2>{t("pnr.title")}</h2>
         </div>
       </div>
 
       <form className="lookup-form" onSubmit={findBooking}>
         <label>
-          PNR number
+          {t("pnr.number")}
           <input
             value={pnr}
             onChange={(e) => setPnr(e.target.value.replace(/\D/g, "").slice(0, 10))}
             inputMode="numeric"
-            placeholder="Enter your 10-digit PNR"
+            placeholder={t("pnr.placeholder")}
             required
           />
         </label>
         <button type="submit" disabled={loading}>
-          {loading && !preview ? "Searching…" : "Find Booking"}
+          {loading && !preview ? t("pnr.searching") : t("pnr.find")}
         </button>
       </form>
 
@@ -119,71 +123,77 @@ export default function PnrLookup({ initialBooking = null, initialPnr = "" }) {
         <div className={`confirmation-card lookup-result status-${booking.status.toLowerCase()}`}>
           <div className="pnr-header">
             <div>
-              <p className="eyebrow">PNR</p>
+              <p className="eyebrow">{t("pnr.pnr")}</p>
               <p className="pnr-number">{booking.pnr}</p>
             </div>
-            <span className={`status-badge ${booking.status.toLowerCase()}`}>
-              {booking.status.replace("_", " ")}
-            </span>
+            <StatusBadge status={booking.status} />
           </div>
 
           <div className="confirmation-details">
-            <span>Train</span>
+            <span>{t("pnr.train")}</span>
             <strong>
               {booking.trainNumber} · {booking.trainName}
             </strong>
-            <span>Route</span>
+            <span>{t("common.route")}</span>
             <strong>
-              {booking.source} to {booking.destination}
+              {t("pnr.routeValue", {
+                source: city(booking.source),
+                destination: city(booking.destination),
+              })}
             </strong>
-            <span>Journey date</span>
+            <span>{t("common.journeyDate")}</span>
             <strong>
-              {booking.journeyDate?.slice(0, 10)} · departs {booking.departure}
+              {booking.journeyDate?.slice(0, 10)} · {t("common.departs", { time: booking.departure })}
             </strong>
-            <span>Class</span>
+            <span>{t("common.class")}</span>
             <strong>{booking.travelClass}</strong>
-            <span>Passengers</span>
+            <span>{t("common.passengers")}</span>
             <strong>{booking.seatCount}</strong>
-            <span>Amount paid</span>
+            <span>{t("pnr.amountPaid")}</span>
             <strong>{formatMoney(booking.payment?.amount ?? booking.totalAmount)}</strong>
             {booking.payment && (
               <>
-                <span>Payment</span>
+                <span>{t("pnr.payment")}</span>
                 <strong>
                   {booking.payment.method} · {booking.payment.maskedReference}
                   <br />
-                  Ref {booking.payment.paymentId}
+                  {t("pnr.ref", { id: booking.payment.paymentId })}
                 </strong>
               </>
             )}
           </div>
 
-          <h4>Passenger list</h4>
+          <h4>{t("pnr.passengerList")}</h4>
           {(booking.passengers || []).map((passenger, index) => (
             <p key={index}>
-              {index + 1}. {passenger.name}, age {passenger.age}, {passenger.gender}
+              {t("common.passengerLine", {
+                index: index + 1,
+                name: passenger.name,
+                age: passenger.age,
+                gender: t(`gender.${passenger.gender}`, undefined, passenger.gender),
+              })}
             </p>
           ))}
 
           {booking.refund && (
             <div className="refund-box">
-              <h4>Cancellation &amp; refund</h4>
+              <h4>{t("pnr.refundTitle")}</h4>
               <div className="confirmation-details">
-                <span>Cancelled on</span>
-                <strong>{new Date(booking.cancelledAt).toLocaleString()}</strong>
-                <span>Refund status</span>
+                <span>{t("pnr.cancelledOn")}</span>
+                <strong>{new Date(booking.cancelledAt).toLocaleString(lang)}</strong>
+                <span>{t("pnr.refundStatus")}</span>
                 <strong>
-                  {booking.refund.status === "PROCESSED" ? "Refund processed" : "No refund applicable"}
+                  {booking.refund.status === "PROCESSED" ? t("pnr.refundProcessed") : t("pnr.noRefund")}
                 </strong>
-                <span>Refund amount</span>
+                <span>{t("pnr.refundAmount")}</span>
                 <strong>
                   {formatMoney(booking.refund.amount)} ({booking.refund.percentage}%)
                 </strong>
-                <span>Cancellation charge</span>
+                <span>{t("pnr.charge")}</span>
                 <strong>{formatMoney(booking.refund.deduction)}</strong>
                 {booking.refund.status === "PROCESSED" && (
                   <>
-                    <span>Refund reference</span>
+                    <span>{t("pnr.refundRef")}</span>
                     <strong>{booking.refund.refundId}</strong>
                   </>
                 )}
@@ -191,30 +201,45 @@ export default function PnrLookup({ initialBooking = null, initialPnr = "" }) {
             </div>
           )}
 
-          {booking.status === "CONFIRMED" && !preview && (
+          {booking.status === "WAITLISTED" && (
+            <div className="refund-box">
+              <p>{t("pnr.waitlistNote")}</p>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => navigate(`/waitlist?pnr=${booking.pnr}`)}
+              >
+                {t("pnr.monitor")}
+              </button>
+            </div>
+          )}
+
+          {(booking.status === "CONFIRMED" || booking.status === "WAITLISTED") && !preview && (
             <button
               type="button"
               className="danger-button"
               disabled={loading}
               onClick={startCancel}
             >
-              Cancel ticket
+              {t("pnr.cancel")}
             </button>
           )}
 
           {preview && (
             <div className="refund-box warning">
-              <h4>Confirm cancellation</h4>
+              <h4>{t("pnr.confirmTitle")}</h4>
               <p>
-                The train departs in about {formatLeadTime(preview.hoursBeforeDeparture)}, so{" "}
-                <strong>{preview.percentage}%</strong> of the fare is refundable.
+                {t("pnr.confirmText", {
+                  time: formatLeadTime(preview.hoursBeforeDeparture, t),
+                  percentage: preview.percentage,
+                })}
               </p>
               <div className="confirmation-details">
-                <span>Ticket amount</span>
+                <span>{t("pnr.ticketAmount")}</span>
                 <strong>{formatMoney(preview.totalAmount)}</strong>
-                <span>Cancellation charge</span>
+                <span>{t("pnr.charge")}</span>
                 <strong>{formatMoney(preview.deduction)}</strong>
-                <span>You will receive</span>
+                <span>{t("pnr.willReceive")}</span>
                 <strong>{formatMoney(preview.refundAmount)}</strong>
               </div>
               <div className="button-row">
@@ -224,7 +249,7 @@ export default function PnrLookup({ initialBooking = null, initialPnr = "" }) {
                   disabled={loading}
                   onClick={confirmCancel}
                 >
-                  {loading ? "Cancelling..." : "Yes, cancel ticket"}
+                  {loading ? t("pnr.cancelling") : t("pnr.yesCancel")}
                 </button>
                 <button
                   type="button"
@@ -232,7 +257,7 @@ export default function PnrLookup({ initialBooking = null, initialPnr = "" }) {
                   disabled={loading}
                   onClick={() => setPreview(null)}
                 >
-                  Keep ticket
+                  {t("pnr.keep")}
                 </button>
               </div>
             </div>
