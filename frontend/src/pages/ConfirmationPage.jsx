@@ -4,6 +4,7 @@ import BookingSummary from "../components/BookingSummary";
 import { ProgressSteps } from "../components/Layout";
 import { useBooking } from "../useBooking";
 import { navigate } from "../router";
+import { useI18n } from "../i18n/useI18n";
 
 async function copyText(text) {
   try {
@@ -31,12 +32,13 @@ async function copyText(text) {
 }
 
 export default function ConfirmationPage({ bookingId, onBookAgain }) {
+  const { t } = useI18n();
   const { booking, loading, error } = useBooking(bookingId);
   const [copyState, setCopyState] = useState("");
 
   async function copyPnr() {
     const ok = await copyText(booking.pnr);
-    setCopyState(ok ? "PNR copied." : "Copy failed. Please select the PNR and copy it manually.");
+    setCopyState(ok ? t("confirm.copied") : t("confirm.copyFailed"));
     setTimeout(() => setCopyState(""), 3000);
   }
 
@@ -45,100 +47,134 @@ export default function ConfirmationPage({ bookingId, onBookAgain }) {
     body = (
       <div className="empty-state" role="status">
         <div className="spinner" aria-hidden="true" />
-        <p>Loading your booking…</p>
+        <p>{t("common.loadingBooking")}</p>
       </div>
     );
   } else if (error || !booking) {
     body = (
       <div className="empty-state">
-        <h3>Booking not found</h3>
-        <p>{error || "We could not load this booking."}</p>
-        <button className="primary-button" type="button" onClick={onBookAgain}>Search trains</button>
+        <h3>{t("common.bookingNotFound")}</h3>
+        <p>{error || t("common.couldNotLoad")}</p>
+        <button className="primary-button" type="button" onClick={onBookAgain}>{t("common.searchTrains")}</button>
       </div>
     );
   } else if (booking.status === "PENDING_PAYMENT") {
     body = (
       <div className="empty-state">
-        <h3>Payment not completed</h3>
-        <p>This booking is not confirmed yet. Complete the payment to receive a PNR.</p>
+        <h3>{t("confirm.notPaid")}</h3>
+        <p>{t("confirm.notPaidText")}</p>
         <button className="primary-button" type="button" onClick={() => navigate(`/payment/${booking._id}`)}>
-          Go to payment
+          {t("confirm.goToPayment")}
         </button>
       </div>
     );
-  } else if (booking.status !== "CONFIRMED" && booking.status !== "CANCELLED") {
+  } else if (!["CONFIRMED", "CANCELLED", "WAITLISTED"].includes(booking.status)) {
     body = (
       <div className="empty-state">
-        <h3>Booking {booking.status.toLowerCase()}</h3>
-        <p>This booking is not confirmed, so there is no ticket to show.</p>
-        <button className="primary-button" type="button" onClick={onBookAgain}>Search trains</button>
+        <h3>
+          {t("confirm.otherStatus", {
+            status: t(`status.${booking.status}`, undefined, booking.status.toLowerCase()),
+          })}
+        </h3>
+        <p>{t("confirm.otherStatusText")}</p>
+        <button className="primary-button" type="button" onClick={onBookAgain}>{t("common.searchTrains")}</button>
       </div>
     );
   } else if (!booking.pnr) {
     body = (
       <div className="empty-state">
-        <h3>PNR not available</h3>
-        <p>The booking has no PNR yet. Please check again shortly or contact support.</p>
+        <h3>{t("confirm.noPnr")}</h3>
+        <p>{t("confirm.noPnrText")}</p>
       </div>
     );
   } else {
+    const isCancelled = booking.status === "CANCELLED";
+    const isWaitlisted = booking.status === "WAITLISTED";
+    const bannerClass = isCancelled ? "cancelled" : isWaitlisted ? "waitlisted" : "";
+
     body = (
       <section className="ticket-card status-confirmed-card" aria-labelledby="confirm-title">
-        <div className={`ticket-banner ${booking.status === "CANCELLED" ? "cancelled" : ""}`}>
-          <span className="success-icon" aria-hidden="true">{booking.status === "CANCELLED" ? "✕" : "✓"}</span>
+        <div className={`ticket-banner ${bannerClass}`}>
+          <span className="success-icon" aria-hidden="true">
+            {isCancelled ? "✕" : isWaitlisted ? "⏳" : "✓"}
+          </span>
           <div>
             <h2 id="confirm-title">
-              {booking.status === "CANCELLED" ? "This booking was cancelled" : "Booking confirmed"}
+              {isCancelled
+                ? t("confirm.cancelledTitle")
+                : isWaitlisted
+                  ? t("confirm.waitlistTitle")
+                  : t("confirm.title")}
             </h2>
             <p>
-              {booking.status === "CANCELLED"
-                ? "The ticket below has been cancelled."
-                : "Your payment was successful and your seats are reserved."}
+              {isCancelled
+                ? t("confirm.cancelledText")
+                : isWaitlisted
+                  ? t("confirm.waitlistText")
+                  : t("confirm.text")}
             </p>
           </div>
         </div>
 
         <div className="pnr-block">
           <div>
-            <p className="eyebrow">YOUR PNR</p>
-            <p className="pnr-number big" aria-label={`PNR ${booking.pnr.split("").join(" ")}`}>{booking.pnr}</p>
+            <p className="eyebrow">{t("confirm.yourPnr")}</p>
+            <p className="pnr-number big" aria-label={t("confirm.pnrAria", { digits: booking.pnr.split("").join(" ") })}>{booking.pnr}</p>
           </div>
-          <button type="button" className="secondary-button" onClick={copyPnr}>Copy PNR</button>
+          <button type="button" className="secondary-button" onClick={copyPnr}>{t("confirm.copyPnr")}</button>
         </div>
         <p className="copy-status" role="status">{copyState}</p>
 
         <BookingSummary booking={booking} />
 
-        <h4>Passengers ({booking.seatCount})</h4>
+        <h4>{t("confirm.passengers", { count: booking.seatCount })}</h4>
         <ul className="passenger-list">
           {(booking.passengers || []).map((p, i) => (
-            <li key={i}>{i + 1}. {p.name}, age {p.age}, {p.gender}</li>
+            <li key={i}>
+              {t("common.passengerLine", {
+                index: i + 1,
+                name: p.name,
+                age: p.age,
+                gender: t(`gender.${p.gender}`, undefined, p.gender),
+              })}
+            </li>
           ))}
         </ul>
 
         <div className="confirmation-details">
-          <span>Total amount paid</span>
+          <span>{t("confirm.amountPaid")}</span>
           <strong>{formatMoney(booking.payment?.amount ?? booking.totalAmount)}</strong>
           {booking.payment && (
             <>
-              <span>Payment method</span>
+              <span>{t("confirm.method")}</span>
               <strong>{booking.payment.method} · {booking.payment.maskedReference}</strong>
-              <span>Payment reference</span>
+              <span>{t("confirm.reference")}</span>
               <strong>{booking.payment.paymentId}</strong>
-              <span>Payment status</span>
-              <strong>{booking.payment.status}</strong>
+              <span>{t("confirm.paymentStatus")}</span>
+              <strong>
+                {t(`paymentStatus.${booking.payment.status}`, undefined, booking.payment.status)}
+              </strong>
             </>
           )}
-          <span>Booking status</span>
-          <strong>{booking.status}</strong>
+          <span>{t("confirm.bookingStatus")}</span>
+          <strong>{t(`status.${booking.status}`, undefined, booking.status)}</strong>
         </div>
 
         <div className="button-row">
-          <button type="button" className="primary-button" onClick={() => navigate(`/pnr?pnr=${booking.pnr}`)}>
-            View / Manage Booking
+          {isWaitlisted && (
+            <button type="button" className="primary-button" onClick={() => navigate(`/waitlist?pnr=${booking.pnr}`)}>
+              {t("confirm.monitor")}
+            </button>
+          )}
+          <button
+            type="button"
+            className={isWaitlisted ? "secondary-button" : "primary-button"}
+            onClick={() => navigate(`/pnr?pnr=${booking.pnr}`)}
+          >
+            {t("confirm.manage")}
           </button>
           <button type="button" className="secondary-button" onClick={onBookAgain}>
-            Book Another Journey
+            {t("confirm.another")}
           </button>
         </div>
       </section>

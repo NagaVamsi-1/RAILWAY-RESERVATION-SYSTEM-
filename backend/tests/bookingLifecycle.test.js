@@ -5,6 +5,9 @@ const { describe, test, before, after, beforeEach } = require("node:test");
 const assert = require("node:assert/strict");
 const mongoose = require("mongoose");
 const request = require("supertest");
+const jwt = require("jsonwebtoken");
+
+process.env.JWT_SECRET = process.env.JWT_SECRET || "test-secret";
 
 const TEST_URI = process.env.MONGODB_TEST_URI;
 const skip = TEST_URI ? false : "Set MONGODB_TEST_URI to run integration tests";
@@ -20,6 +23,11 @@ function futureDate(days) {
 }
 
 const DATE = futureDate(10);
+// Booking and payment need a logged-in passenger.
+const AUTH = `Bearer ${jwt.sign(
+  { userId: new mongoose.Types.ObjectId().toString() },
+  process.env.JWT_SECRET
+)}`;
 const passenger = { name: "Ravi Kumar", age: 21, gender: "Male" };
 const upi = { method: "UPI", upiId: "ravi@okbank" };
 
@@ -36,14 +44,14 @@ const seatsLeft = async () =>
   (await SeatAvailability.findOne({ trainId: "12657", journeyDate: DATE, travelClass: "3A" })).availableSeats;
 
 function createBooking(passengers = [passenger]) {
-  return request(app).post("/api/bookings").send({
+  return request(app).post("/api/bookings").set("Authorization", AUTH).send({
     trainId: "12657", journeyDate: DATE, travelClass: "3A", passengers,
   });
 }
 
 async function bookAndPay(passengers = [passenger]) {
   const created = await createBooking(passengers);
-  const paid = await request(app).post(`/api/bookings/${created.body.booking._id}/payment`).send(upi);
+  const paid = await request(app).post(`/api/bookings/${created.body.booking._id}/payment`).set("Authorization", AUTH).send(upi);
   return { created, paid, pnr: paid.body.booking?.pnr };
 }
 
@@ -74,7 +82,7 @@ describe("BL-11/12/13 booking lifecycle", { skip }, () => {
   test("invalid UPI ID is rejected and booking is not confirmed", async () => {
     const created = await createBooking();
     const res = await request(app)
-      .post(`/api/bookings/${created.body.booking._id}/payment`)
+      .post(`/api/bookings/${created.body.booking._id}/payment`).set("Authorization", AUTH)
       .send({ method: "UPI", upiId: "invalid_format" });
     assert.equal(res.status, 400);
     const stored = await Booking.findById(created.body.booking._id);
@@ -85,19 +93,19 @@ describe("BL-11/12/13 booking lifecycle", { skip }, () => {
   test("declined payment keeps booking unconfirmed and allows retry (UC-04 4a-4c)", async () => {
     const created = await createBooking();
     const id = created.body.booking._id;
-    const declined = await request(app).post(`/api/bookings/${id}/payment`)
+    const declined = await request(app).post(`/api/bookings/${id}/payment`).set("Authorization", AUTH)
       .send({ method: "UPI", upiId: "ravi@failbank" });
     assert.equal(declined.status, 402);
     assert.equal((await Booking.findById(id)).status, "PENDING_PAYMENT");
 
-    const retry = await request(app).post(`/api/bookings/${id}/payment`).send(upi);
+    const retry = await request(app).post(`/api/bookings/${id}/payment`).set("Authorization", AUTH).send(upi);
     assert.equal(retry.status, 200);
     assert.equal(retry.body.booking.status, "CONFIRMED");
   });
 
   test("paying twice does not create a second payment or new PNR", async () => {
     const { created, pnr } = await bookAndPay();
-    const again = await request(app).post(`/api/bookings/${created.body.booking._id}/payment`).send(upi);
+    const again = await request(app).post(`/api/bookings/${created.body.booking._id}/payment`).set("Authorization", AUTH).send(upi);
     assert.equal(again.status, 409);
     assert.equal((await Booking.findById(created.body.booking._id)).pnr, pnr);
   });
@@ -106,14 +114,14 @@ describe("BL-11/12/13 booking lifecycle", { skip }, () => {
     const created = await createBooking();
     const id = created.body.booking._id;
     const results = await Promise.all(
-      [1, 2, 3].map(() => request(app).post(`/api/bookings/${id}/payment`).send(upi))
+      [1, 2, 3].map(() => request(app).post(`/api/bookings/${id}/payment`).set("Authorization", AUTH).send(upi))
     );
     assert.equal(results.filter((r) => r.status === 200).length, 1);
   });
 
   test("card payment works and the card number is never stored", async () => {
     const created = await createBooking();
-    const res = await request(app).post(`/api/bookings/${created.body.booking._id}/payment`).send({
+    const res = await request(app).post(`/api/bookings/${created.body.booking._id}/payment`).set("Authorization", AUTH).send({
       method: "CARD", cardNumber: "4242424242424242", cardHolder: "Ravi Kumar", expiry: "12/35", cvv: "123",
     });
     assert.equal(res.status, 200);
@@ -128,7 +136,7 @@ describe("BL-11/12/13 booking lifecycle", { skip }, () => {
     const id = created.body.booking._id;
     assert.equal(await seatsLeft(), 41);
     await Booking.updateOne({ _id: id }, { holdExpiresAt: new Date(Date.now() - 1000) });
-    const res = await request(app).post(`/api/bookings/${id}/payment`).send(upi);
+    const res = await request(app).post(`/api/bookings/${id}/payment`).set("Authorization", AUTH).send(upi);
     assert.equal(res.status, 410);
     assert.equal(await seatsLeft(), 42);
     assert.equal((await Booking.findById(id)).status, "EXPIRED");

@@ -10,6 +10,10 @@ const bookingsRouter = require("./routes/bookings");
 const { calculateTotalFare, getFarePerPassenger, HOLD_MINUTES } = require("./config/fares");
 const { releaseExpiredHolds } = require("./services/holds");
 const { toPublicBooking } = require("./services/publicBooking");
+const { countWaitlistedSeats, promoteWaitlist } = require("./services/waitlist");
+const { MAX_WAITLIST_SEATS } = require("./config/waitlist");
+const { SUPPORTED_LANGUAGES, DEFAULT_LANGUAGE } = require("./config/languages");
+const waitlistRouter = require("./routes/waitlist");
 
 const usersRouter = require("./routes/users");
 const authenticateToken = require("./middleware/auth");
@@ -144,11 +148,20 @@ app.get("/api/seats/availability", async (req, res) => {
   try {
     await releaseExpiredHolds();
 
-    const availability = await SeatAvailability.findOne({
+    const key = {
       trainId: trainId.trim(),
       journeyDate: date,
       travelClass: travelClass.trim().toUpperCase()
-    }).lean();
+    };
+
+    let availability = await SeatAvailability.findOne(key).lean();
+
+    // BL-14: seats that are free go to the waitlist first, so never show them as available.
+    if (availability && availability.availableSeats > 0) {
+      if (await promoteWaitlist(key)) {
+        availability = await SeatAvailability.findOne(key).lean();
+      }
+    }
 
     if (!availability) {
       return res.status(404).json({
@@ -157,13 +170,18 @@ app.get("/api/seats/availability", async (req, res) => {
       });
     }
 
+    const waitlistedSeats = await countWaitlistedSeats(key);
+
     return res.status(200).json({
       trainId: availability.trainId,
       trainNumber: availability.trainNumber,
       journeyDate: availability.journeyDate,
       travelClass: availability.travelClass,
       totalSeats: availability.totalSeats,
-      availableSeats: availability.availableSeats
+      availableSeats: availability.availableSeats,
+      // BL-14: how much of the waitlist is already taken for this class.
+      waitlistedSeats,
+      waitlistSeatsRemaining: Math.max(0, MAX_WAITLIST_SEATS - waitlistedSeats)
     });
   } catch (error) {
     console.error("Seat availability lookup failed:", error.message);
@@ -178,6 +196,8 @@ app.get("/api/seats/availability", async (req, res) => {
 // PENDING_PAYMENT until payment succeeds (see routes/bookings.js).
 app.post("/api/bookings", authenticateToken, async (req, res) => {
   const { trainId, journeyDate, travelClass, passengers } = req.body;
+  // BL-14: only used as a fallback when the class cannot seat everyone.
+  const wantsWaitlist = req.body.joinWaitlist === true;
 
   if (
     typeof trainId !== "string" ||
@@ -244,9 +264,42 @@ app.post("/api/bookings", authenticateToken, async (req, res) => {
 
   let seatsReserved = false;
 
+  // Creates the booking document. A waitlist booking (BL-14) is identical except that it
+  // never holds seats and is flagged so payment puts it in the queue instead of confirming it.
+  const createBookingRecord = (isWaitlist) =>
+    Booking.create({
+      userId: req.user.userId,
+      trainId: train.id,
+      trainNumber: train.number,
+      trainName: train.name,
+      source: train.source,
+      destination: train.destination,
+      journeyDate,
+      travelClass: normalizedClass,
+      passengers: passengers.map((passenger) => ({
+        name: passenger.name.trim(),
+        age: passenger.age,
+        gender: passenger.gender
+      })),
+      seatCount: passengers.length,
+      departure: train.departure,
+      farePerPassenger: getFarePerPassenger(normalizedClass),
+      totalAmount: calculateTotalFare(normalizedClass, passengers.length),
+      status: "PENDING_PAYMENT",
+      isWaitlist,
+      holdExpiresAt: new Date(Date.now() + HOLD_MINUTES * 60 * 1000)
+    });
+
   try {
     // Free seats held by unpaid bookings whose payment window has expired.
     await releaseExpiredHolds();
+
+    // BL-14: passengers already waiting get any free seats before a new booking can take them.
+    await promoteWaitlist({
+      trainId: train.id,
+      journeyDate,
+      travelClass: normalizedClass
+    });
 
     // Atomically decrement seats only if enough are available.
     const availability = await SeatAvailability.findOneAndUpdate(
@@ -279,35 +332,48 @@ app.post("/api/bookings", authenticateToken, async (req, res) => {
         });
       }
 
-      return res.status(409).json({
-        message: "Not enough seats are available for the requested passengers.",
-        availableSeats: existingAvailability.availableSeats
+      // BL-14: not enough seats. Offer the waitlist, or join it when the passenger asked to.
+      const waitlistSeatsRemaining = Math.max(
+        0,
+        MAX_WAITLIST_SEATS -
+          (await countWaitlistedSeats({
+            trainId: train.id,
+            journeyDate,
+            travelClass: normalizedClass
+          }))
+      );
+      const waitlistHasRoom = waitlistSeatsRemaining >= passengers.length;
+
+      if (!wantsWaitlist) {
+        return res.status(409).json({
+          message: "Not enough seats are available for the requested passengers.",
+          availableSeats: existingAvailability.availableSeats,
+          canJoinWaitlist: waitlistHasRoom,
+          waitlistSeatsRemaining
+        });
+      }
+
+      if (!waitlistHasRoom) {
+        return res.status(409).json({
+          message: "The waitlist for this class is full.",
+          availableSeats: existingAvailability.availableSeats,
+          canJoinWaitlist: false,
+          waitlistSeatsRemaining
+        });
+      }
+
+      // No seats are held for a waitlist booking: it only needs payment to enter the queue.
+      const waitlistBooking = await createBookingRecord(true);
+
+      return res.status(201).json({
+        message: `You are joining the waitlist. No seat is held. Pay within ${HOLD_MINUTES} minutes to get your waitlist PNR; the ticket is confirmed automatically if seats become available.`,
+        booking: toPublicBooking(waitlistBooking)
       });
     }
 
     seatsReserved = true;
 
-   const booking = await Booking.create({
-  userId: req.user.userId,
-  trainId: train.id,
-      trainNumber: train.number,
-      trainName: train.name,
-      source: train.source,
-      destination: train.destination,
-      journeyDate,
-      travelClass: normalizedClass,
-      passengers: passengers.map((passenger) => ({
-        name: passenger.name.trim(),
-        age: passenger.age,
-        gender: passenger.gender
-      })),
-      seatCount: passengers.length,
-      departure: train.departure,
-      farePerPassenger: getFarePerPassenger(normalizedClass),
-      totalAmount: calculateTotalFare(normalizedClass, passengers.length),
-      status: "PENDING_PAYMENT",
-      holdExpiresAt: new Date(Date.now() + HOLD_MINUTES * 60 * 1000)
-    });
+    const booking = await createBookingRecord(false);
 
     return res.status(201).json({
       message: `Seats held for ${HOLD_MINUTES} minutes. Complete the payment to confirm your booking.`,
@@ -378,6 +444,17 @@ app.get("/api/bookings/:bookingId", async (req, res) => {
 // BL-11 payment, BL-12 PNR lookup, BL-13 cancellation and refund
 app.use("/api/bookings", bookingsRouter);
 app.use("/api/users", usersRouter);
+
+// BL-14: monitor waitlisted bookings
+app.use("/api/waitlist", waitlistRouter);
+
+// BL-15: languages the interface supports
+app.get("/api/languages", (req, res) => {
+  res.status(200).json({
+    defaultLanguage: DEFAULT_LANGUAGE,
+    languages: SUPPORTED_LANGUAGES
+  });
+});
 
 if (require.main === module) {
   const PORT = process.env.PORT || 5000;

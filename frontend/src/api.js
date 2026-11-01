@@ -1,5 +1,5 @@
 
-export const API = "http://localhost:5000/api";
+export const API = "http://localhost:5050/api";
 
 // Attach the login token to API requests when one exists.
 export async function request(url, options = {}) {
@@ -21,7 +21,12 @@ export async function request(url, options = {}) {
   const data = await response.json().catch(() => ({}));
 
   if (!response.ok) {
-    throw new Error(data.message || data.error || "Request failed.");
+    const error = new Error(data.message || data.error || "Request failed.");
+    // Lets callers tell apart "the server said no" from "the network failed", and read
+    // extra fields the server sent with the refusal (for example canJoinWaitlist).
+    error.status = response.status;
+    error.data = data;
+    throw error;
   }
 
   return data;

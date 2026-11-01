@@ -13,7 +13,12 @@ async function seedSeatAvailability() {
   await mongoose.connect(process.env.MONGODB_URI);
   console.log("Connected to MongoDB Atlas.");
 
-  const journeyDate = "2026-11-01";
+  // Usage: node src/scripts/seedSeatAvailability.js [YYYY-MM-DD]
+  const journeyDate = process.argv[2] || "2026-11-01";
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(journeyDate)) {
+    throw new Error("Journey date must look like 2026-11-01.");
+  }
 
   const records = [
     {
@@ -39,6 +44,23 @@ async function seedSeatAvailability() {
       travelClass: "2A",
       totalSeats: 46,
       availableSeats: 28
+    },
+    // Train 12608 seats: CC is sold out on purpose, so the waitlist (BL-14) can be tried.
+    {
+      trainId: "12608",
+      trainNumber: "12608",
+      journeyDate,
+      travelClass: "CC",
+      totalSeats: 78,
+      availableSeats: 0
+    },
+    {
+      trainId: "12608",
+      trainNumber: "12608",
+      journeyDate,
+      travelClass: "2S",
+      totalSeats: 100,
+      availableSeats: 60
     }
   ];
 

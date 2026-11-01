@@ -2,9 +2,11 @@
 import { useState } from "react";
 import { API, request } from "../api";
 import { navigate } from "../router";
+import { useI18n } from "../i18n/useI18n";
 import "./RegisterPage.css";
 
 export default function RegisterPage() {
+  const { t } = useI18n();
   const [form, setForm] = useState({
     name: "",
     email: "",
@@ -32,7 +34,7 @@ export default function RegisterPage() {
     setError("");
 
     if (form.password !== form.confirmPassword) {
-      setError("Passwords do not match.");
+      setError(t("register.mismatch"));
       return;
     }
 
@@ -51,12 +53,12 @@ export default function RegisterPage() {
         }),
       });
 
-      setMessage(data.message || "Registration successful!");
+      setMessage(data.message || t("register.success"));
 
       // Registration succeeded. Continue to Login.
       navigate("/login");
     } catch (err) {
-      setError(err.message || "Registration failed.");
+      setError(err.message || t("register.failed"));
     } finally {
       setLoading(false);
     }
@@ -64,12 +66,12 @@ export default function RegisterPage() {
 
   return (
     <section className="page-section registration-page">
-      <h1>Create an account</h1>
-      <p>Register to get started with Railway Reservation.</p>
+      <h1>{t("register.title")}</h1>
+      <p>{t("register.subtitle")}</p>
 
       <form className="registration-form" onSubmit={handleSubmit}>
         <p>
-          <label htmlFor="register-name">Full name</label>
+          <label htmlFor="register-name">{t("register.name")}</label>
           <input
             id="register-name"
             name="name"
@@ -83,7 +85,7 @@ export default function RegisterPage() {
         </p>
 
         <p>
-          <label htmlFor="register-email">Email address</label>
+          <label htmlFor="register-email">{t("register.email")}</label>
           <input
             id="register-email"
             name="email"
@@ -97,7 +99,7 @@ export default function RegisterPage() {
         </p>
 
         <p>
-          <label htmlFor="register-password">Password</label>
+          <label htmlFor="register-password">{t("register.password")}</label>
           <input
             id="register-password"
             name="password"
@@ -113,7 +115,7 @@ export default function RegisterPage() {
 
         <p>
           <label htmlFor="register-confirm-password">
-            Confirm password
+            {t("register.confirm")}
           </label>
           <input
             id="register-confirm-password"
@@ -133,7 +135,7 @@ export default function RegisterPage() {
           type="submit"
           disabled={loading}
         >
-          {loading ? "Registering..." : "Register"}
+          {loading ? t("register.loading") : t("register.submit")}
         </button>
 
         {message && <p role="status">{message}</p>}

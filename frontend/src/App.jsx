@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import "./App.css";
 import { Header } from "./components/Layout";
 import { useRoute, navigate } from "./router";
+import { useI18n } from "./i18n/useI18n";
 import {
   clearSearch,
   emptySearch,
@@ -15,12 +16,14 @@ import PassengerPage from "./pages/PassengerPage";
 import PaymentPage from "./pages/PaymentPage";
 import ConfirmationPage from "./pages/ConfirmationPage";
 import PnrPage from "./pages/PnrPage";
+import WaitlistPage from "./pages/WaitlistPage";
 import RegisterPage from "./pages/RegisterPage";
 import LoginPage from "./pages/LoginPage";
 import WelcomePage from "./pages/WelcomePage";
 
 export default function App() {
   const { path, params } = useRoute();
+  const { t } = useI18n();
   const [search, setSearch] = useState(loadSearch);
   const [authToken, setAuthToken] = useState(
     () => sessionStorage.getItem("authToken")
@@ -95,6 +98,13 @@ export default function App() {
     page = <PassengerPage search={search} setSearch={setSearch} />;
   } else if (path === "/pnr") {
     page = <PnrPage initialPnr={params.get("pnr") || ""} />;
+  } else if (path === "/waitlist") {
+    page = (
+      <WaitlistPage
+        key={params.get("pnr") || "all"}
+        initialPnr={params.get("pnr") || ""}
+      />
+    );
   } else {
     page = <SearchPage search={search} setSearch={setSearch} />;
   }
@@ -114,7 +124,7 @@ export default function App() {
           document.getElementById("main-content")?.focus();
         }}
       >
-        Skip to content
+        {t("app.skip")}
       </a>
 
       <Header path={headerPath} onLogout={handleLogout} />
@@ -124,7 +134,7 @@ export default function App() {
       </main>
 
       <footer className="site-footer">
-        Railway Reservation System · Academic project
+        {t("app.footer")}
       </footer>
     </div>
   );

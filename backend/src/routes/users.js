@@ -3,6 +3,12 @@ const express = require("express");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
+const authenticateToken = require("../middleware/auth");
+const {
+  SUPPORTED_LANGUAGES,
+  DEFAULT_LANGUAGE,
+  isSupportedLanguage,
+} = require("../config/languages");
 
 const router = express.Router();
 
@@ -133,6 +139,8 @@ router.post("/login", async (req, res) => {
         id: user._id,
         name: user.name,
         email: user.email,
+        // BL-15: null until the passenger has chosen a language.
+        preferredLanguage: user.preferredLanguage || null,
       },
     });
   } catch (error) {
@@ -141,6 +149,70 @@ router.post("/login", async (req, res) => {
     return res.status(500).json({
       message: "Unable to log in.",
     });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// BL-15: Language selection (UC-08, FR-08, NFR-04)
+// ---------------------------------------------------------------------------
+
+// GET /api/users/me/language: the signed-in passenger's saved language.
+router.get("/me/language", authenticateToken, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId).lean();
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found." });
+    }
+
+    return res.status(200).json({
+      language: user.preferredLanguage || DEFAULT_LANGUAGE,
+      isDefault: !user.preferredLanguage,
+    });
+  } catch (error) {
+    console.error("Language lookup failed:", error.message);
+    return res.status(500).json({ message: "Unable to retrieve your language." });
+  }
+});
+
+// PUT /api/users/me/language: save the passenger's language.
+// UC-08 alternate flow: an unsupported language is not applied and a message explains why.
+router.put("/me/language", authenticateToken, async (req, res) => {
+  const { language } = req.body || {};
+
+  if (typeof language !== "string" || !language.trim()) {
+    return res.status(400).json({ message: "Please choose a language." });
+  }
+
+  const code = language.trim().toLowerCase();
+
+  if (!isSupportedLanguage(code)) {
+    return res.status(400).json({
+      message: `That language is not supported. Please choose one of: ${SUPPORTED_LANGUAGES.map(
+        (item) => item.name
+      ).join(", ")}.`,
+      supportedLanguages: SUPPORTED_LANGUAGES,
+    });
+  }
+
+  try {
+    const user = await User.findByIdAndUpdate(
+      req.user.userId,
+      { preferredLanguage: code },
+      { new: true }
+    ).lean();
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found." });
+    }
+
+    return res.status(200).json({
+      message: "Language updated.",
+      language: user.preferredLanguage,
+    });
+  } catch (error) {
+    console.error("Language update failed:", error.message);
+    return res.status(500).json({ message: "Unable to update your language." });
   }
 });
 

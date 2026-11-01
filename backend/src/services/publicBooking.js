@@ -18,6 +18,9 @@ function toPublicBooking(doc) {
     seatCount: booking.seatCount,
     farePerPassenger: booking.farePerPassenger,
     totalAmount: booking.totalAmount,
+    isWaitlist: Boolean(booking.isWaitlist),
+    waitlistedAt: booking.waitlistedAt,
+    confirmedFromWaitlistAt: booking.confirmedFromWaitlistAt,
     holdExpiresAt: booking.status === "PENDING_PAYMENT" ? booking.holdExpiresAt : undefined,
     payment: booking.payment && booking.payment.status
       ? {
@@ -40,6 +43,7 @@ function toPublicBooking(doc) {
         }
       : null,
     cancelledAt: booking.cancelledAt,
+    cancellationReason: booking.cancellationReason,
     createdAt: booking.createdAt,
     updatedAt: booking.updatedAt,
   };

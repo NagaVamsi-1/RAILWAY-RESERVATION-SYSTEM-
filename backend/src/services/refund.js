@@ -1,3 +1,5 @@
+const crypto = require("node:crypto");
+
 // Refund rules (the SRS says "applicable rules" without defining them, so these are
 // documented assumptions based on time left before departure).
 const REFUND_TIERS = [
@@ -6,6 +8,10 @@ const REFUND_TIERS = [
   { minHours: 4, percentage: 50 },
   { minHours: 0, percentage: 0 },
 ];
+
+function generateRefundId() {
+  return `RFN${crypto.randomBytes(6).toString("hex").toUpperCase()}`;
+}
 
 // Departure times are Indian Standard Time.
 function getDepartureDate(journeyDate, departure) {
@@ -28,7 +34,11 @@ function calculateRefund(booking, now = new Date()) {
     return { cancellable: false, reason: "The train has already departed, so this ticket cannot be cancelled." };
   }
 
-  const tier = REFUND_TIERS.find((item) => hoursBeforeDeparture >= item.minHours);
+  // BL-14: a waitlisted ticket never had a confirmed seat, so it is refunded in full.
+  const tier =
+    booking.status === "WAITLISTED"
+      ? { percentage: 100 }
+      : REFUND_TIERS.find((item) => hoursBeforeDeparture >= item.minHours);
   const total = booking.totalAmount;
   const refundAmount = Math.round(total * tier.percentage) / 100;
   const deduction = Math.round((total - refundAmount) * 100) / 100;
@@ -43,4 +53,4 @@ function calculateRefund(booking, now = new Date()) {
   };
 }
 
-module.exports = { REFUND_TIERS, getDepartureDate, calculateRefund };
+module.exports = { REFUND_TIERS, generateRefundId, getDepartureDate, calculateRefund };

@@ -101,14 +101,29 @@ const bookingSchema = new mongoose.Schema(
       type: String,
       match: /^[1-9]\d{9}$/
     },
-    // PENDING_PAYMENT: seats held, waiting for payment (UC-04)
+    // PENDING_PAYMENT: seats held (or a waitlist place requested), waiting for payment (UC-04)
     // CONFIRMED: paid, PNR generated
-    // CANCELLED: cancelled by the passenger (BL-13)
+    // WAITLISTED: paid and in the waitlist queue, no seat yet (BL-14)
+    // CANCELLED: cancelled by the passenger (BL-13) or auto-cancelled at departure (BL-14)
     // EXPIRED: payment window ran out, seats released
     status: {
       type: String,
-      enum: ["PENDING_PAYMENT", "CONFIRMED", "CANCELLED", "EXPIRED"],
+      enum: ["PENDING_PAYMENT", "CONFIRMED", "WAITLISTED", "CANCELLED", "EXPIRED"],
       default: "PENDING_PAYMENT"
+    },
+    // BL-14: true when the passenger asked to join the waitlist because the class was full.
+    // Such a booking never holds seats; it is only promoted to CONFIRMED when seats free up.
+    isWaitlist: {
+      type: Boolean,
+      default: false
+    },
+    // BL-14: when the paid ticket entered the waitlist queue (queue order = oldest first).
+    waitlistedAt: {
+      type: Date
+    },
+    // BL-14: set when a waitlisted ticket was automatically confirmed.
+    confirmedFromWaitlistAt: {
+      type: Date
     },
     holdExpiresAt: {
       type: Date
@@ -134,6 +149,12 @@ const bookingSchema = new mongoose.Schema(
     },
     cancelledAt: {
       type: Date
+    },
+    // BL-14: PASSENGER = cancelled by the passenger, WAITLIST_NOT_CLEARED = still waitlisted
+    // when the train departed (full refund).
+    cancellationReason: {
+      type: String,
+      enum: ["PASSENGER", "WAITLIST_NOT_CLEARED"]
     }
   },
   { timestamps: true }
@@ -145,5 +166,14 @@ bookingSchema.index(
   { unique: true, partialFilterExpression: { pnr: { $type: "string" } } }
 );
 bookingSchema.index({ status: 1, holdExpiresAt: 1 });
+// BL-14: finding the waitlist queue for a train / date / class in order.
+bookingSchema.index({
+  trainId: 1,
+  journeyDate: 1,
+  travelClass: 1,
+  status: 1,
+  waitlistedAt: 1
+});
+bookingSchema.index({ userId: 1, createdAt: -1 });
 
 module.exports = mongoose.model("Booking", bookingSchema);
